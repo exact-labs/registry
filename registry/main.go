@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"mime/multipart"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -12,7 +11,6 @@ import (
 	"github.com/pocketbase/pocketbase/forms"
 	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/models/schema"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 type OkResponse struct {
@@ -25,7 +23,27 @@ type ErrorResponse struct {
 	Error  error `json:"error"`
 }
 
-func create_package(app core.App, package_name string) error {
+func update_package(app core.App, package_name string, record_id string, de_listed bool) error {
+	record, err := app.Dao().FindRecordById(package_name, record_id)
+	if err != nil {
+		return err
+	}
+
+	form := forms.NewRecordUpsert(app, record)
+
+	form.LoadData(map[string]any{
+		"de_listed": de_listed,
+	})
+
+	if err := form.Submit(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func create_package(app core.App, c echo.Context) error {
+	package_name := c.FormValue("name")
 	exists, _ := app.Dao().FindCollectionByNameOrId(package_name)
 
 	if exists != nil {
@@ -35,10 +53,10 @@ func create_package(app core.App, package_name string) error {
 		form := forms.NewCollectionUpsert(app, collection)
 		form.Name = package_name
 		form.Type = models.CollectionTypeBase
-		form.ListRule = types.Pointer("")
-		form.ViewRule = types.Pointer("")
-		form.CreateRule = types.Pointer("")
-		form.UpdateRule = types.Pointer("@request.auth.id = access.id")
+		form.ListRule = nil
+		form.ViewRule = nil
+		form.CreateRule = nil
+		form.UpdateRule = nil
 		form.DeleteRule = nil
 
 		form.Schema.AddField(&schema.SchemaField{
@@ -53,8 +71,54 @@ func create_package(app core.App, package_name string) error {
 		})
 
 		form.Schema.AddField(&schema.SchemaField{
-			Name:     "de_listed",
-			Type:     schema.FieldTypeBool,
+			Name:     "visibility",
+			Type:     schema.FieldTypeSelect,
+			Required: true,
+			Unique:   false,
+         Options: &schema.SelectOptions{
+            MaxSelect: 1,
+            Values: []string{"public", "private"},
+         },
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "description",
+			Type:     schema.FieldTypeText,
+			Required: false,
+			Unique:   false,
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "author",
+			Type:     schema.FieldTypeText,
+			Required: true,
+			Unique:   false,
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "url",
+			Type:     schema.FieldTypeText,
+			Required: false,
+			Unique:   false,
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "repository",
+			Type:     schema.FieldTypeText,
+			Required: false,
+			Unique:   false,
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "license",
+			Type:     schema.FieldTypeText,
+			Required: false,
+			Unique:   false,
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "dependencies",
+			Type:     schema.FieldTypeJson,
 			Required: false,
 			Unique:   false,
 		})
@@ -89,12 +153,8 @@ func create_package(app core.App, package_name string) error {
 	return nil
 }
 
-type UploadedFile struct {
-	name   string
-	header *multipart.FileHeader
-}
-
-func create_version(app core.App, c echo.Context, package_name string) error {
+func create_version(app core.App, c echo.Context) error {
+	package_name := c.FormValue("name")
 	collection, err := app.Dao().FindCollectionByNameOrId(package_name)
 	if err != nil {
 		return err
@@ -122,17 +182,15 @@ func main() {
 			Method: http.MethodPost,
 			Path:   "/api/package/create/:name",
 			Handler: func(c echo.Context) error {
-				package_name := c.PathParam("name")
-
-				if err := create_package(app, package_name); err != nil {
+				if err := create_package(app, c); err != nil {
 					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 				}
 
-				if err := create_version(app, c, package_name); err != nil {
+				if err := create_version(app, c); err != nil {
 					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 				}
 
-				return c.JSON(http.StatusOK, &OkResponse{Status: http.StatusOK, Message: map[string]interface{}{"created": package_name}})
+				return c.JSON(http.StatusOK, &OkResponse{Status: http.StatusOK, Message: map[string]interface{}{"created": c.FormValue("name")}})
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
