@@ -1,8 +1,8 @@
 package main
 
 import (
-   "fmt"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -201,10 +201,11 @@ type VersionInfo struct {
 type PackageInfo struct {
 	Id          string                    `json:"_id"`
 	Name        string                    `json:"name"`
+   License     string                    `json:"license"`
 	Description string                    `json:"description"`
 	Versions    map[string]VersionInfo    `json:"versions"`
 	Times       map[string]types.DateTime `json:"times"`
-	License     string                    `json:"license"`
+	Dist        DistInfo                  `json:"dist"`
 }
 
 func isPrivate(record *models.Record) bool {
@@ -247,9 +248,21 @@ func main() {
 
 				for _, record := range records {
 					dependencies := make(map[string]string)
-               filename := record.GetString("tarball")
+					filename := record.GetString("tarball")
+					filePath := record.BaseFilesPath() + "/" + filename
+
 					_ = json.Unmarshal([]byte(record.GetString("dependencies")), &dependencies)
-               
+
+					fs, err := app.NewFilesystem()
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					}
+					defer fs.Close()
+
+					attribute, err := fs.Attributes(filePath)
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					}
 
 					pkgs[record.GetString("version")] = VersionInfo{
 						Id:           record.Id,
@@ -262,10 +275,10 @@ func main() {
 						Private:      isPrivate(record),
 						Dependencies: dependencies,
 						Dist: DistInfo{
-							Integrity:    record.BaseFilesPath() + "/" +  filename,
-							Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s", filename),
+							Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
+							Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s/%s.tgz", record.GetString("version"), package_name),
 							FileCount:    1,
-							UnpackedSize: 1,
+							UnpackedSize: attribute.Size,
 						},
 					}
 				}
@@ -277,14 +290,162 @@ func main() {
 				times["created"] = original.Created
 				times["updated"] = latest.Updated
 
+				filename := latest.GetString("tarball")
+				filePath := latest.BaseFilesPath() + "/" + filename
+
+				fs, err := app.NewFilesystem()
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+				defer fs.Close()
+
+				attribute, err := fs.Attributes(filePath)
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
 				return c.JSON(http.StatusOK, &PackageInfo{
 					Name:        package_name,
 					Id:          collection.Id,
 					Description: latest.GetString("description"),
 					Versions:    pkgs,
 					Times:       times,
-					License:     latest.GetString("license"),
+					Dist: DistInfo{
+						Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
+						Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s.tgz", package_name),
+						FileCount:    1,
+						UnpackedSize: attribute.Size,
+					},
+					License: latest.GetString("license"),
 				})
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/:name/:version",
+			Handler: func(c echo.Context) error {
+				package_name := c.PathParam("name")
+				package_version := c.PathParam("version")
+
+				dependencies := make(map[string]string)
+
+				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"version": package_version})
+				_ = json.Unmarshal([]byte(records[0].GetString("dependencies")), &dependencies)
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				filename := records[0].GetString("tarball")
+				filePath := records[0].BaseFilesPath() + "/" + filename
+
+				fs, err := app.NewFilesystem()
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+				defer fs.Close()
+
+				attribute, err := fs.Attributes(filePath)
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				return c.JSON(http.StatusOK, &VersionInfo{
+					Id:           records[0].Id,
+					Access:       records[0].GetStringSlice("access"),
+					Version:      records[0].GetString("version"),
+					Published:    records[0].Created,
+					Description:  records[0].GetString("description"),
+					Author:       records[0].GetString("author"),
+					License:      hasLicense(records[0]),
+					Private:      isPrivate(records[0]),
+					Dependencies: dependencies,
+					Dist: DistInfo{
+						Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
+						Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s/%s.tgz", records[0].GetString("version"), package_name),
+						FileCount:    1,
+						UnpackedSize: attribute.Size,
+					},
+				})
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/:name/_/:version/:archive",
+			Handler: func(c echo.Context) error {
+				fs, err := app.NewFilesystem()
+				package_name := c.PathParam("name")
+				package_version := c.PathParam("version")
+
+				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"version": package_version})
+				filePath := fmt.Sprintf("%s/%s", records[0].BaseFilesPath(), records[0].GetString("tarball"))
+				servedName := fmt.Sprintf("%s-%s.tgz", package_name, records[0].GetString("version"))
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+				defer fs.Close()
+
+				if err := fs.Serve(c.Response(), c.Request(), filePath, servedName); err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				return nil
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/:name/_/:archive",
+			Handler: func(c echo.Context) error {
+				fs, err := app.NewFilesystem()
+				package_name := c.PathParam("name")
+
+				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
+				filePath := fmt.Sprintf("%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+				servedName := fmt.Sprintf("%s-%s.tgz", package_name, records[len(records)-1].GetString("version"))
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+				defer fs.Close()
+
+				if err := fs.Serve(c.Response(), c.Request(), filePath, servedName); err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				return nil
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
