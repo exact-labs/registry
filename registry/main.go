@@ -5,12 +5,14 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v5"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/forms"
 	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/models/schema"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 type OkResponse struct {
@@ -75,10 +77,10 @@ func create_package(app core.App, c echo.Context) error {
 			Type:     schema.FieldTypeSelect,
 			Required: true,
 			Unique:   false,
-         Options: &schema.SelectOptions{
-            MaxSelect: 1,
-            Values: []string{"public", "private"},
-         },
+			Options: &schema.SelectOptions{
+				MaxSelect: 1,
+				Values:    []string{"public", "private"},
+			},
 		})
 
 		form.Schema.AddField(&schema.SchemaField{
@@ -174,13 +176,85 @@ func create_version(app core.App, c echo.Context) error {
 	return nil
 }
 
+type VersionInfo struct {
+	Id           string         `json:"_id"`
+	Version      string         `json:"version"`
+	Published    types.DateTime `json:"published"`
+	Description  string         `json:"description"`
+	Author       string         `json:"author"`
+	License      string         `json:"license"`
+	Dependencies string         `json:"dependencies"`
+}
+
+type PackageInfo struct {
+	Id          string                   `json:"_id"`
+	Name        string                   `json:"name"`
+	Description string                   `json:"description"`
+	Versions    []VersionInfo            `json:"versions"`
+	Times       []map[string]interface{} `json:"times"`
+	License     string                   `json:"license"`
+}
+
+func (pkg *PackageInfo) AddItem(item VersionInfo) {
+	pkg.Versions = append(pkg.Versions, item)
+}
+
 func main() {
 	app := pocketbase.New()
 
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/:name",
+			Handler: func(c echo.Context) error {
+				package_name := c.PathParam("name")
+				collection, err := app.Dao().FindCollectionByNameOrId(package_name)
+				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
+				latest := records[len(records)-1]
+				times := []map[string]interface{}{}
+				pkg := PackageInfo{}
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				for _, s := range records {
+					pkg.AddItem(VersionInfo{
+						Id:           s.Id,
+						Version:      s.GetString("version"),
+						Published:    s.Created,
+						Description:  s.GetString("description"),
+						Author:       s.GetString("author"),
+						License:      s.GetString("license"),
+						Dependencies: s.GetString("dependencies"),
+					})
+				}
+
+				for _, s := range records {
+					times = append(times, map[string]interface{}{s.GetString("version"): s.Created})
+				}
+
+				return c.JSON(http.StatusOK, &PackageInfo{
+					Name:        package_name,
+					Id:          collection.Id,
+					Description: latest.GetString("description"),
+					Versions:    pkg.Versions,
+					Times:       times,
+					License:     latest.GetString("license"),
+				})
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
 			Method: http.MethodPost,
-			Path:   "/api/package/create/:name",
+			Path:   "/create",
 			Handler: func(c echo.Context) error {
 				if err := create_package(app, c); err != nil {
 					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
