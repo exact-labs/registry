@@ -311,7 +311,6 @@ func package_index(app core.App, c echo.Context, split []string) error {
 			Dist: DistInfo{
 				Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
 				Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s/%s.tgz", record.GetString("version"), package_name),
-				FileCount:    1,
 				UnpackedSize: attribute.Size,
 			},
 		}
@@ -394,7 +393,6 @@ func package_version(app core.App, c echo.Context, split []string) error {
 		Dist: DistInfo{
 			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
 			Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s/%s.tgz", records[0].GetString("version"), package_name),
-			FileCount:    1,
 			UnpackedSize: attribute.Size,
 		},
 	})
@@ -498,24 +496,40 @@ func main() {
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/:name/*",
+			Path:   "/:name_version/*",
 			Handler: func(c echo.Context) error {
-				package_name := c.PathParam("name")
+				split := strings.Split(c.PathParam("name_version"), "@")
 				file_name := c.PathParam("*")
 
-				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
-				filePath := fmt.Sprintf("pb_data/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+				if len(split) == 1 {
+					records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"visibility": "public"})
+					filePath := fmt.Sprintf("pb_data/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
 
-				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					}
+
+					file, err := read_tar(filePath)
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					}
+
+					return c.String(http.StatusOK, string(file[file_name].Data))
+				} else {
+					records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"version": split[1]})
+					filePath := fmt.Sprintf("pb_data/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					}
+
+					file, err := read_tar(filePath)
+					if err != nil {
+						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					}
+
+					return c.String(http.StatusOK, string(file[file_name].Data))
 				}
-
-				file, err := read_tar(filePath)
-				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
-				}
-
-				return c.String(http.StatusOK, string(file[file_name].Data))
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
