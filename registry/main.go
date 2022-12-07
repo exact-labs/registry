@@ -1,6 +1,8 @@
 package main
 
 import (
+   "fmt"
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -176,27 +178,49 @@ func create_version(app core.App, c echo.Context) error {
 	return nil
 }
 
+type DistInfo struct {
+	Integrity    string `json:"integrity"`
+	Tarball      string `json:"tarball"`
+	FileCount    int64  `json:"fileCount"`
+	UnpackedSize int64  `json:"unpackedSize"`
+}
+
 type VersionInfo struct {
-	Id           string         `json:"_id"`
-	Version      string         `json:"version"`
-	Published    types.DateTime `json:"published"`
-	Description  string         `json:"description"`
-	Author       string         `json:"author"`
-	License      string         `json:"license"`
-	Dependencies string         `json:"dependencies"`
+	Id           string            `json:"_id"`
+	Access       []string          `json:"_maintainers"`
+	Version      string            `json:"version"`
+	Published    types.DateTime    `json:"published"`
+	Description  string            `json:"description"`
+	Author       string            `json:"author"`
+	License      string            `json:"license"`
+	Private      bool              `json:"private"`
+	Dependencies map[string]string `json:"dependencies"`
+	Dist         DistInfo          `json:"dist"`
 }
 
 type PackageInfo struct {
-	Id          string                   `json:"_id"`
-	Name        string                   `json:"name"`
-	Description string                   `json:"description"`
-	Versions    []VersionInfo            `json:"versions"`
-	Times       []map[string]interface{} `json:"times"`
-	License     string                   `json:"license"`
+	Id          string                    `json:"_id"`
+	Name        string                    `json:"name"`
+	Description string                    `json:"description"`
+	Versions    map[string]VersionInfo    `json:"versions"`
+	Times       map[string]types.DateTime `json:"times"`
+	License     string                    `json:"license"`
 }
 
-func (pkg *PackageInfo) AddItem(item VersionInfo) {
-	pkg.Versions = append(pkg.Versions, item)
+func isPrivate(record *models.Record) bool {
+	if record.GetString("visibility") == "private" {
+		return true
+	}
+
+	return false
+}
+
+func hasLicense(record *models.Record) string {
+	if record.GetString("license") == "" {
+		return "none"
+	}
+
+	return record.GetString("license")
 }
 
 func main() {
@@ -210,35 +234,54 @@ func main() {
 				package_name := c.PathParam("name")
 				collection, err := app.Dao().FindCollectionByNameOrId(package_name)
 				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
+
 				latest := records[len(records)-1]
-				times := []map[string]interface{}{}
-				pkg := PackageInfo{}
+				original := records[0]
+
+				times := make(map[string]types.DateTime)
+				pkgs := make(map[string]VersionInfo)
 
 				if err != nil {
 					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 				}
 
-				for _, s := range records {
-					pkg.AddItem(VersionInfo{
-						Id:           s.Id,
-						Version:      s.GetString("version"),
-						Published:    s.Created,
-						Description:  s.GetString("description"),
-						Author:       s.GetString("author"),
-						License:      s.GetString("license"),
-						Dependencies: s.GetString("dependencies"),
-					})
+				for _, record := range records {
+					dependencies := make(map[string]string)
+               filename := record.GetString("tarball")
+					_ = json.Unmarshal([]byte(record.GetString("dependencies")), &dependencies)
+               
+
+					pkgs[record.GetString("version")] = VersionInfo{
+						Id:           record.Id,
+						Access:       record.GetStringSlice("access"),
+						Version:      record.GetString("version"),
+						Published:    record.Created,
+						Description:  record.GetString("description"),
+						Author:       record.GetString("author"),
+						License:      hasLicense(record),
+						Private:      isPrivate(record),
+						Dependencies: dependencies,
+						Dist: DistInfo{
+							Integrity:    record.BaseFilesPath() + "/" +  filename,
+							Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s", filename),
+							FileCount:    1,
+							UnpackedSize: 1,
+						},
+					}
 				}
 
-				for _, s := range records {
-					times = append(times, map[string]interface{}{s.GetString("version"): s.Created})
+				for _, record := range records {
+					times[record.GetString("version")] = record.Created
 				}
+
+				times["created"] = original.Created
+				times["updated"] = latest.Updated
 
 				return c.JSON(http.StatusOK, &PackageInfo{
 					Name:        package_name,
 					Id:          collection.Id,
 					Description: latest.GetString("description"),
-					Versions:    pkg.Versions,
+					Versions:    pkgs,
 					Times:       times,
 					License:     latest.GetString("license"),
 				})
