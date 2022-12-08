@@ -46,6 +46,10 @@ func update_package(app core.App, package_name string, record_id string, de_list
 func create_package(app core.App, c echo.Context) error {
 	package_name := c.FormValue("name")
 	exists, _ := app.Dao().FindCollectionByNameOrId(package_name)
+   auth, err := app.Dao().FindCollectionByNameOrId("just_auth_system")
+   if err != nil {
+      return err
+   }
 
 	if exists != nil {
 		return nil
@@ -66,7 +70,7 @@ func create_package(app core.App, c echo.Context) error {
 			Required: true,
 			Unique:   false,
 			Options: &schema.RelationOptions{
-				CollectionId:  "_pb_users_auth_",
+				CollectionId:  auth.Id,
 				CascadeDelete: false,
 			},
 		})
@@ -154,7 +158,12 @@ func create_package(app core.App, c echo.Context) error {
 	return nil
 }
 
-func check_auth(app core.App, c echo.Context) bool {
+func check_auth(app core.App, c echo.Context, package_name string) bool {
+	exists, _ := app.Dao().FindCollectionByNameOrId(package_name)
+	if exists == nil {
+		return true
+	}
+
 	records, err := app.Dao().FindRecordsByExpr(c.FormValue("name"), dbx.HashExp{"visibility": "public"})
 	if err != nil {
 		return false
@@ -175,11 +184,11 @@ func check_auth(app core.App, c echo.Context) bool {
 }
 
 func create_version(app core.App, c echo.Context) error {
-	if check_auth(app, c) == false {
+	package_name := c.FormValue("name")
+	if check_auth(app, c, package_name) == false {
 		return errors.New("the authorized record model is not allowed to perform this action")
 	}
 
-	package_name := c.FormValue("name")
 	collection, err := app.Dao().FindCollectionByNameOrId(package_name)
 	if err != nil {
 		return err
@@ -513,7 +522,7 @@ func main() {
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
-				apis.RequireAdminOrRecordAuth("users"),
+				apis.RequireAdminOrRecordAuth("just_auth_system"),
 			},
 		})
 
