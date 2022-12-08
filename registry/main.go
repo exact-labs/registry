@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,9 +22,10 @@ import (
 	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/models/schema"
 	"github.com/pocketbase/pocketbase/tools/types"
+	"golang.org/x/exp/slices"
 )
 
-type OkResponse struct {
+type Response struct {
 	Status  int64                  `json:"status"`
 	Message map[string]interface{} `json:"message"`
 }
@@ -98,8 +100,8 @@ func create_package(app core.App, c echo.Context) error {
 		form := forms.NewCollectionUpsert(app, collection)
 		form.Name = package_name
 		form.Type = models.CollectionTypeBase
-		form.ListRule = nil
-		form.ViewRule = nil
+		form.ListRule = types.Pointer("@request.auth.id = access.id")
+		form.ViewRule = types.Pointer("@request.auth.id = access.id")
 		form.CreateRule = nil
 		form.UpdateRule = nil
 		form.DeleteRule = nil
@@ -198,7 +200,31 @@ func create_package(app core.App, c echo.Context) error {
 	return nil
 }
 
+func check_auth(app core.App, c echo.Context) bool {
+	records, err := app.Dao().FindRecordsByExpr(c.FormValue("name"), dbx.HashExp{"visibility": "public"})
+	if err != nil {
+		return false
+	}
+
+	admin, _ := c.Get(apis.ContextAdminKey).(*models.Admin)
+	user, _ := c.Get(apis.ContextAuthRecordKey).(*models.Record)
+
+	if admin != nil {
+		return true
+	}
+
+	if len(records) == 0 {
+		return true
+	}
+
+	return slices.Contains(records[len(records)-1].GetStringSlice("access"), user.Id)
+}
+
 func create_version(app core.App, c echo.Context) error {
+	if check_auth(app, c) == false {
+		return errors.New("the authorized record model is not allowed to perform this action")
+	}
+
 	package_name := c.FormValue("name")
 	collection, err := app.Dao().FindCollectionByNameOrId(package_name)
 	if err != nil {
@@ -549,14 +575,43 @@ func main() {
 				}
 
 				if err := create_version(app, c); err != nil {
-					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					return c.JSON(http.StatusInternalServerError, &Response{Status: http.StatusInternalServerError, Message: map[string]interface{}{
+						"error": err.Error(),
+					}})
 				}
 
-				return c.JSON(http.StatusOK, &OkResponse{Status: http.StatusOK, Message: map[string]interface{}{"created": c.FormValue("name")}})
+				return c.JSON(http.StatusOK, &Response{Status: http.StatusOK, Message: map[string]interface{}{"created": c.FormValue("name")}})
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
-				apis.RequireRecordAuth("users"),
+				apis.RequireAdminOrRecordAuth("users"),
+			},
+		})
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/maintainers/:name",
+			Handler: func(c echo.Context) error {
+				records, err := app.Dao().FindRecordsByExpr(c.PathParam("name"), dbx.HashExp{"visibility": "public"})
+				if err != nil {
+					return c.JSON(http.StatusNotFound, &Response{Status: http.StatusNotFound, Message: map[string]interface{}{
+						"error": "package or file not found",
+					}})
+				}
+
+				if c.QueryParam("type") == "expanded" {
+					apis.EnrichRecord(c, app.Dao(), records[len(records)-1], "access")
+					return c.JSON(http.StatusOK, records[len(records)-1].Expand())
+				} else {
+					return c.JSON(http.StatusOK, records[len(records)-1].GetStringSlice("access"))
+				}
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
 			},
 		})
 

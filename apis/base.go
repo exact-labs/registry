@@ -33,7 +33,7 @@ func InitApi(app core.App) (*echo.Echo, error) {
 			return strings.HasPrefix(c.Request().URL.Path, trailedAdminPath)
 		},
 	}))
-	e.Use(middleware.Recover())
+	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{DisablePrintStack: true}))
 	e.Use(middleware.Secure())
 	e.Use(LoadAuthContext(app))
 

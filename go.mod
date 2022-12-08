@@ -21,6 +21,7 @@ require (
 	github.com/spf13/cobra v1.6.1
 	gocloud.dev v0.27.0
 	golang.org/x/crypto v0.3.0
+	golang.org/x/exp v0.0.0-20221207211629-99ab8fa1c11f
 	golang.org/x/net v0.3.0
 	golang.org/x/oauth2 v0.2.0
 	modernc.org/sqlite v1.20.0
