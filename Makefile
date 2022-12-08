@@ -1,6 +1,6 @@
 clean:
-	rm just_registry
+	rm registry
 build:
-	go build registry/main.go && mv main just_registry
+	go build .
 run:
-	go run registry/main.go serve
+	go run . serve
