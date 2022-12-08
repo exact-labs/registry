@@ -46,10 +46,10 @@ func update_package(app core.App, package_name string, record_id string, de_list
 func create_package(app core.App, c echo.Context) error {
 	package_name := c.FormValue("name")
 	exists, _ := app.Dao().FindCollectionByNameOrId(package_name)
-   auth, err := app.Dao().FindCollectionByNameOrId("just_auth_system")
-   if err != nil {
-      return err
-   }
+	auth, err := app.Dao().FindCollectionByNameOrId("just_auth_system")
+	if err != nil {
+		return err
+	}
 
 	if exists != nil {
 		return nil
@@ -145,7 +145,7 @@ func create_package(app core.App, c echo.Context) error {
 			Unique:   false,
 			Options: &schema.FileOptions{
 				MaxSelect: 1,
-				MaxSize:   10485760,
+				MaxSize:   20485760,
 				MimeTypes: []string{"application/gzip"},
 			},
 		})
@@ -269,7 +269,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 			Dependencies: dependencies,
 			Dist: DistInfo{
 				Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
-				Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s/%s.tgz", record.GetString("version"), package_name),
+				Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, record.GetString("version"), package_name),
 				UnpackedSize: attribute.Size,
 			},
 		}
@@ -304,7 +304,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 		Times:       times,
 		Dist: DistInfo{
 			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s.tgz", package_name),
+			Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s.tgz", package_name, package_name),
 			FileCount:    1,
 			UnpackedSize: attribute.Size,
 		},
@@ -351,7 +351,7 @@ func package_version(app core.App, c echo.Context, split []string) error {
 		Dependencies: dependencies,
 		Dist: DistInfo{
 			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:      fmt.Sprintf("https://r.justjs.dev/std/_/%s/%s.tgz", records[0].GetString("version"), package_name),
+			Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, records[0].GetString("version"), package_name),
 			UnpackedSize: attribute.Size,
 		},
 	})
@@ -467,7 +467,7 @@ func main() {
 
 				if len(split) == 1 {
 					records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"visibility": "public"})
-					filePath := fmt.Sprintf("pb_data/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+					filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
 
 					if err != nil {
 						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
@@ -481,7 +481,7 @@ func main() {
 					return c.String(http.StatusOK, string(file[file_name].Data))
 				} else {
 					records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"version": split[1]})
-					filePath := fmt.Sprintf("pb_data/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+					filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
 
 					if err != nil {
 						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
