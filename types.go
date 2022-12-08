@@ -13,10 +13,9 @@ type ErrorResponse struct {
 }
 
 type DistInfo struct {
-	Integrity    string `json:"integrity"`
-	Tarball      string `json:"tarball"`
-	FileCount    int64  `json:"fileCount"`
-	UnpackedSize int64  `json:"unpackedSize"`
+	Integrity string `json:"integrity"`
+	Tarball   string `json:"tarball"`
+	Size      int64  `json:"size"`
 }
 
 type VersionInfo struct {

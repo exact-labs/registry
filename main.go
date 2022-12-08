@@ -270,7 +270,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 			Dist: DistInfo{
 				Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
 				Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, record.GetString("version"), package_name),
-				UnpackedSize: attribute.Size,
+				Size: attribute.Size,
 			},
 		}
 	}
@@ -305,8 +305,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 		Dist: DistInfo{
 			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
 			Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s.tgz", package_name, package_name),
-			FileCount:    1,
-			UnpackedSize: attribute.Size,
+			Size: attribute.Size,
 		},
 		License: latest.GetString("license"),
 	})
@@ -315,7 +314,6 @@ func package_index(app core.App, c echo.Context, split []string) error {
 func package_version(app core.App, c echo.Context, split []string) error {
 	package_name := split[0]
 	package_version := split[1]
-
 	dependencies := make(map[string]string)
 
 	records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"version": package_version})
@@ -352,7 +350,7 @@ func package_version(app core.App, c echo.Context, split []string) error {
 		Dist: DistInfo{
 			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
 			Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, records[0].GetString("version"), package_name),
-			UnpackedSize: attribute.Size,
+			Size: attribute.Size,
 		},
 	})
 }
