@@ -21,6 +21,7 @@ import (
 	"github.com/pocketbase/pocketbase/forms"
 	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/models/schema"
+	"github.com/pocketbase/pocketbase/tools/search"
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/exp/slices"
 )
@@ -609,6 +610,61 @@ func main() {
 				} else {
 					return c.JSON(http.StatusOK, records[len(records)-1].GetStringSlice("access"))
 				}
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
+		return nil
+	})
+
+	type Result struct {
+		Page       int `json:"page"`
+		PerPage    int `json:"perPage"`
+		TotalItems int `json:"totalItems"`
+		TotalPages int `json:"totalPages"`
+		Packages   any `json:"packages"`
+	}
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/packages",
+			Handler: func(c echo.Context) error {
+				fieldResolver := search.NewSimpleFieldResolver(
+					"id", "created", "updated", "name", "system", "type",
+				)
+
+				collections := []*models.Collection{}
+				pkgs := make(map[string]interface{})
+
+				result, err := search.NewProvider(fieldResolver).
+					Query(app.Dao().CollectionQuery()).
+					ParseAndExec(c.QueryString(), &collections)
+
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+				}
+
+				for _, collection := range collections {
+					pkgs[collection.Name] = map[string]interface{}{
+						"id":      collection.Id,
+						"created": collection.Created,
+						"updated": collection.Updated,
+					}
+				}
+            
+            delete(pkgs, "just_auth_system")
+
+				return c.JSON(http.StatusOK, &Result{
+					Page:       result.Page,
+					PerPage:    result.PerPage,
+					TotalItems: result.TotalItems - 1,
+					TotalPages: result.TotalPages,
+					Packages:   pkgs,
+				})
+
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
