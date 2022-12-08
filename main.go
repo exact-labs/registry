@@ -1,22 +1,17 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
-	"testing/fstest"
-   
-   "just/registry/helpers"
-   
-   "golang.org/x/exp/slices"
-   "github.com/labstack/echo/v5"
+
+	"just/registry/helpers"
+
+	"github.com/labstack/echo/v5"
+	"golang.org/x/exp/slices"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
@@ -46,41 +41,6 @@ func update_package(app core.App, package_name string, record_id string, de_list
 	}
 
 	return nil
-}
-
-func read_tar(source string) (fstest.MapFS, error) {
-	file, err := os.Open(source)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	gzRead, err := gzip.NewReader(file)
-	if err != nil {
-		return nil, err
-	}
-
-	tarRead := tar.NewReader(gzRead)
-	files := make(fstest.MapFS)
-
-	for {
-		cur, err := tarRead.Next()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, err
-		}
-		if cur.Typeflag != tar.TypeReg {
-			continue
-		}
-		data, err := io.ReadAll(tarRead)
-		if err != nil {
-			return nil, err
-		}
-		files[cur.Name] = &fstest.MapFile{Data: data}
-	}
-
-	return files, nil
 }
 
 func create_package(app core.App, c echo.Context) error {
@@ -389,13 +349,13 @@ func package_version(app core.App, c echo.Context, split []string) error {
 }
 
 func main() {
-   _, isUsingGoRun := helpers.InspectRuntime()
-   
+	_, isUsingGoRun := helpers.InspectRuntime()
+
 	app := pocketbase.NewWithConfig(pocketbase.Config{
-      DefaultDataDir: "packages",
-      DefaultDebug: isUsingGoRun,
-   })
-   
+		DefaultDataDir: "packages",
+		DefaultDebug:   isUsingGoRun,
+	})
+
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
@@ -504,7 +464,7 @@ func main() {
 						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 					}
 
-					file, err := read_tar(filePath)
+					file, err := helpers.ReadTar(filePath)
 					if err != nil {
 						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 					}
@@ -518,7 +478,7 @@ func main() {
 						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 					}
 
-					file, err := read_tar(filePath)
+					file, err := helpers.ReadTar(filePath)
 					if err != nil {
 						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
 					}
@@ -633,12 +593,6 @@ func main() {
 
 		return nil
 	})
-   
-   app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-      // serves static files from the provided public dir (if exists)
-      e.Router.GET("/pkgs/*", apis.StaticDirectoryHandler(os.DirFS("static"), true))
-      return nil
-   })
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
