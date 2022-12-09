@@ -13,6 +13,7 @@ type ErrorResponse struct {
 }
 
 type DistInfo struct {
+	Version   string `json:"version"`
 	Integrity string `json:"integrity"`
 	Tarball   string `json:"tarball"`
 	Size      int64  `json:"size"`

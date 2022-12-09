@@ -268,9 +268,10 @@ func package_index(app core.App, c echo.Context, split []string) error {
 			Private:      isPrivate(record),
 			Dependencies: dependencies,
 			Dist: DistInfo{
-				Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
-				Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, record.GetString("version"), package_name),
-				Size: attribute.Size,
+				Version:   record.GetString("version"),
+				Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
+				Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, record.GetString("version"), package_name),
+				Size:      attribute.Size,
 			},
 		}
 	}
@@ -303,9 +304,10 @@ func package_index(app core.App, c echo.Context, split []string) error {
 		Versions:    pkgs,
 		Times:       times,
 		Dist: DistInfo{
-			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s.tgz", package_name, package_name),
-			Size: attribute.Size,
+			Version:   latest.GetString("version"),
+			Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
+			Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s.tgz", package_name, package_name),
+			Size:      attribute.Size,
 		},
 		License: latest.GetString("license"),
 	})
@@ -348,9 +350,10 @@ func package_version(app core.App, c echo.Context, split []string) error {
 		Private:      isPrivate(records[0]),
 		Dependencies: dependencies,
 		Dist: DistInfo{
-			Integrity:    fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:      fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, records[0].GetString("version"), package_name),
-			Size: attribute.Size,
+			Version:   records[0].GetString("version"),
+			Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
+			Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, records[0].GetString("version"), package_name),
+			Size:      attribute.Size,
 		},
 	})
 }
