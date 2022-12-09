@@ -560,6 +560,43 @@ func main() {
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
+			Path:   "/dependencies/:name",
+			Handler: func(c echo.Context) error {
+				records, err := app.Dao().FindRecordsByExpr(c.PathParam("name"), dbx.HashExp{"visibility": "public"})
+				if err != nil {
+					return c.JSON(http.StatusNotFound, &Response{Status: http.StatusNotFound, Message: map[string]interface{}{
+						"error": "package or file not found",
+					}})
+				}
+
+				packages := make(map[string][]string)
+				for _, record := range records {
+					dep_list := make(map[string]string)
+					urls := []string{}
+               
+					_ = json.Unmarshal([]byte(record.GetString("dependencies")), &dep_list)
+					for dep_name := range dep_list {
+						dep, err := app.Dao().FindRecordsByExpr(dep_name, dbx.HashExp{"visibility": "public"})
+						if err == nil {
+							urls = append(urls, fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", dep_name, dep[0].GetString("version"), dep_name))
+						}
+					}
+					packages[record.GetString("version")] = urls
+				}
+
+				return c.JSON(http.StatusOK, packages)
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
 			Path:   "/packages",
 			Handler: func(c echo.Context) error {
 				fieldResolver := search.NewSimpleFieldResolver(
