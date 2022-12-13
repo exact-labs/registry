@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"just/registry/helpers"
@@ -158,13 +157,6 @@ func create_package(app core.App, c echo.Context) error {
 	}
 
 	return nil
-}
-
-func templatesDir() string {
-	if strings.HasPrefix(os.Args[0], os.TempDir()) {
-		return "./templates"
-	}
-	return filepath.Join(os.Args[0], "../templates")
 }
 
 func check_auth(app core.App, c echo.Context, package_name string) bool {
@@ -649,7 +641,11 @@ func main() {
 
 		return nil
 	})
-
+   
+   if err := copyTemplates(); err != nil {
+      log.Panic(err)
+   }
+   
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.GET("/templates/*", apis.StaticDirectoryHandler(os.DirFS(templatesDir()), false))
 		return nil
