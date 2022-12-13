@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"just/registry/helpers"
@@ -156,6 +158,13 @@ func create_package(app core.App, c echo.Context) error {
 	}
 
 	return nil
+}
+
+func templatesDir() string {
+	if strings.HasPrefix(os.Args[0], os.TempDir()) {
+		return "./templates"
+	}
+	return filepath.Join(os.Args[0], "../templates")
 }
 
 func check_auth(app core.App, c echo.Context, package_name string) bool {
@@ -573,7 +582,7 @@ func main() {
 				for _, record := range records {
 					dep_list := make(map[string]string)
 					urls := []string{}
-               
+
 					_ = json.Unmarshal([]byte(record.GetString("dependencies")), &dep_list)
 					for dep_name := range dep_list {
 						dep, err := app.Dao().FindRecordsByExpr(dep_name, dbx.HashExp{"visibility": "public"})
@@ -638,6 +647,11 @@ func main() {
 			},
 		})
 
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.GET("/templates/*", apis.StaticDirectoryHandler(os.DirFS(templatesDir()), false))
 		return nil
 	})
 
