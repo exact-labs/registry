@@ -362,7 +362,7 @@ func package_version(app core.App, c echo.Context, split []string) error {
 func main() {
 	_, isUsingGoRun := helpers.InspectRuntime()
 
-	app := pocketbase.NewWithConfig(pocketbase.Config{
+	app := pocketbase.NewWithConfig(&pocketbase.Config{
 		DefaultDataDir: "packages",
 		DefaultDebug:   isUsingGoRun,
 	})
