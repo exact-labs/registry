@@ -155,7 +155,7 @@ func create_package(app core.App, c echo.Context) error {
 			Unique:   false,
 			Options: &schema.FileOptions{
 				MaxSelect: 1,
-				MaxSize:   20485760,
+				MaxSize:   10485760,
 				MimeTypes: []string{"application/gzip"},
 			},
 		})
@@ -673,6 +673,21 @@ func main() {
 
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.GET("/templates/*", apis.StaticDirectoryHandler(os.DirFS(templatesDir()), false))
+		return nil
+	})
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/",
+			Handler: func(c echo.Context) error {
+				return c.Redirect(http.StatusMovedPermanently, "https://justjs.dev/docs/registry")
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
+
 		return nil
 	})
 
