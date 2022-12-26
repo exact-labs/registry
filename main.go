@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-   "regexp"
+	"regexp"
 	"strings"
 
 	"just/registry/helpers"
@@ -368,7 +368,9 @@ func package_version(app core.App, c echo.Context, split []string) error {
 	})
 }
 
-func get_file(app core.App, c echo.Context, split []string, file_name string) error {
+func get_file(app core.App, c echo.Context, split []string, file_name string, raw_name string) error {
+	add_mod := strings.NewReplacer(`} from './`, fmt.Sprintf(`} from './%s/`, raw_name), `} from "./`, fmt.Sprintf(`} from "./%s/`, raw_name))
+
 	if len(split) == 1 {
 		records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"visibility": "public"})
 		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
@@ -383,9 +385,9 @@ func get_file(app core.App, c echo.Context, split []string, file_name string) er
 		}
 
 		if file_name == "index_file" {
-			return c.String(http.StatusOK, string(file[records[len(records)-1].GetString("index")].Data))
+			return c.String(http.StatusOK, add_mod.Replace(string(file[records[len(records)-1].GetString("index")].Data)))
 		} else {
-			return c.String(http.StatusOK, string(file[file_name].Data))
+			return c.String(http.StatusOK, add_mod.Replace(string(file[file_name].Data)))
 		}
 	} else {
 		records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"version": split[1]})
@@ -401,9 +403,9 @@ func get_file(app core.App, c echo.Context, split []string, file_name string) er
 		}
 
 		if file_name == "index_file" {
-			return c.String(http.StatusOK, string(file[records[len(records)-1].GetString("index")].Data))
+			return c.String(http.StatusOK, add_mod.Replace(string(file[records[len(records)-1].GetString("index")].Data)))
 		} else {
-			return c.String(http.StatusOK, string(file[file_name].Data))
+			return c.String(http.StatusOK, add_mod.Replace(string(file[file_name].Data)))
 		}
 	}
 }
@@ -422,10 +424,10 @@ func main() {
 			Path:   "/:name_version",
 			Handler: func(c echo.Context) error {
 				split := strings.Split(c.PathParam("name_version"), "@")
-            regex := regexp.MustCompile(`Wget/|curl|^$`)
-         
+				regex := regexp.MustCompile(`Wget/|curl|^$`)
+
 				if regex.MatchString(useragent.Parse(c.Request().UserAgent()).String) {
-					return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), "index_file")
+					return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), "index_file", c.PathParam("name_version"))
 				} else {
 					if len(split) == 1 {
 						return package_index(app, c, split)
@@ -518,7 +520,7 @@ func main() {
 			Method: http.MethodGet,
 			Path:   "/:name_version/*",
 			Handler: func(c echo.Context) error {
-				return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), c.PathParam("*"))
+				return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), c.PathParam("*"), c.PathParam("name_version"))
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
