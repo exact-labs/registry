@@ -422,7 +422,7 @@ func main() {
 			Path:   "/:name_version",
 			Handler: func(c echo.Context) error {
 				split := strings.Split(c.PathParam("name_version"), "@")
-            regex := regexp.MustCompile(`JustRuntime/|curl|^$`)
+            regex := regexp.MustCompile(`Wget/|curl|^$`)
          
 				if regex.MatchString(useragent.Parse(c.Request().UserAgent()).String) {
 					return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), "index_file")
