@@ -7,11 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+   "regexp"
 	"strings"
 
 	"just/registry/helpers"
 
 	"github.com/labstack/echo/v5"
+	"github.com/mileusna/useragent"
 	"golang.org/x/exp/slices"
 
 	"github.com/pocketbase/dbx"
@@ -91,6 +93,13 @@ func create_package(app core.App, c echo.Context) error {
 			Name:     "description",
 			Type:     schema.FieldTypeText,
 			Required: false,
+			Unique:   false,
+		})
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "index",
+			Type:     schema.FieldTypeText,
+			Required: true,
 			Unique:   false,
 		})
 
@@ -359,6 +368,46 @@ func package_version(app core.App, c echo.Context, split []string) error {
 	})
 }
 
+func get_file(app core.App, c echo.Context, split []string, file_name string) error {
+	if len(split) == 1 {
+		records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"visibility": "public"})
+		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+		}
+
+		file, err := helpers.ReadTar(filePath)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+		}
+
+		if file_name == "index_file" {
+			return c.String(http.StatusOK, string(file[records[len(records)-1].GetString("index")].Data))
+		} else {
+			return c.String(http.StatusOK, string(file[file_name].Data))
+		}
+	} else {
+		records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"version": split[1]})
+		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+		}
+
+		file, err := helpers.ReadTar(filePath)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+		}
+
+		if file_name == "index_file" {
+			return c.String(http.StatusOK, string(file[records[len(records)-1].GetString("index")].Data))
+		} else {
+			return c.String(http.StatusOK, string(file[file_name].Data))
+		}
+	}
+}
+
 func main() {
 	_, isUsingGoRun := helpers.InspectRuntime()
 
@@ -373,11 +422,16 @@ func main() {
 			Path:   "/:name_version",
 			Handler: func(c echo.Context) error {
 				split := strings.Split(c.PathParam("name_version"), "@")
-
-				if len(split) == 1 {
-					return package_index(app, c, split)
+            regex := regexp.MustCompile(`JustRuntime/|curl|`)
+         
+				if regex.MatchString(useragent.Parse(c.Request().UserAgent()).String) {
+					return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), "index_file")
 				} else {
-					return package_version(app, c, split)
+					if len(split) == 1 {
+						return package_index(app, c, split)
+					} else {
+						return package_version(app, c, split)
+					}
 				}
 			},
 			Middlewares: []echo.MiddlewareFunc{
@@ -464,38 +518,7 @@ func main() {
 			Method: http.MethodGet,
 			Path:   "/:name_version/*",
 			Handler: func(c echo.Context) error {
-				split := strings.Split(c.PathParam("name_version"), "@")
-				file_name := c.PathParam("*")
-
-				if len(split) == 1 {
-					records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"visibility": "public"})
-					filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
-
-					if err != nil {
-						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
-					}
-
-					file, err := helpers.ReadTar(filePath)
-					if err != nil {
-						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
-					}
-
-					return c.String(http.StatusOK, string(file[file_name].Data))
-				} else {
-					records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"version": split[1]})
-					filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
-
-					if err != nil {
-						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
-					}
-
-					file, err := helpers.ReadTar(filePath)
-					if err != nil {
-						return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
-					}
-
-					return c.String(http.StatusOK, string(file[file_name].Data))
-				}
+				return get_file(app, c, strings.Split(c.PathParam("name_version"), "@"), c.PathParam("*"))
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
@@ -641,11 +664,11 @@ func main() {
 
 		return nil
 	})
-   
-   if err := copyTemplates(); err != nil {
-      log.Panic(err)
-   }
-   
+
+	if err := copyTemplates(); err != nil {
+		log.Panic(err)
+	}
+
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.GET("/templates/*", apis.StaticDirectoryHandler(os.DirFS(templatesDir()), false))
 		return nil

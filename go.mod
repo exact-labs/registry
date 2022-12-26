@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/go-git/go-git/v5 v5.5.1
 	github.com/labstack/echo/v5 v5.0.0-20220201181537-ed2888cfa198
+	github.com/mileusna/useragent v1.2.1
 	github.com/pocketbase/dbx v1.8.0
 	github.com/pocketbase/pocketbase v0.10.4
 	golang.org/x/exp v0.0.0-20221208044002-44028be4359e
