@@ -411,7 +411,7 @@ func get_file(app core.App, c echo.Context, split []string, file_name string, ra
 			if regex.MatchString(user_agent) {
 				return c.String(http.StatusOK, add_mod.Replace(string(file[records[len(records)-1].GetString("index")].Data)))
 			} else {
-				return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%v/%v", split, records[len(records)-1].GetString("index")))
+				return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%v/%v", raw_name, records[len(records)-1].GetString("index")))
 			}
 		} else {
 			return c.String(http.StatusOK, add_mod.Replace(string(file[file_name].Data)))
