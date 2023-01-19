@@ -88,6 +88,17 @@ func create_package(app core.App, c echo.Context) error {
 				Values:    []string{"public", "private"},
 			},
 		})
+      
+      form.Schema.AddField(&schema.SchemaField{
+         Name:     "type",
+         Type:     schema.FieldTypeSelect,
+         Required: true,
+         Unique:   false,
+         Options: &schema.SelectOptions{
+            MaxSelect: 1,
+            Values:    []string{"local", "net", "both"},
+         },
+      })
 
 		form.Schema.AddField(&schema.SchemaField{
 			Name:     "description",
@@ -369,7 +380,7 @@ func package_version(app core.App, c echo.Context, split []string) error {
 }
 
 func get_file(app core.App, c echo.Context, split []string, file_name string, raw_name string, user_agent string) error {
-	add_mod := strings.NewReplacer(`} from './`, fmt.Sprintf(`} from './%s/`, raw_name), `} from "./`, fmt.Sprintf(`} from "./%s/`, raw_name))
+	add_mod := strings.NewReplacer(`from './`, fmt.Sprintf(`from './%s/`, raw_name), `from "./`, fmt.Sprintf(`from "./%s/`, raw_name))
 	regex := regexp.MustCompile("curl")
 
 	if len(split) == 1 {
