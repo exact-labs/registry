@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"just/registry/helpers"
+	"just/registry/parse"
 
 	"github.com/labstack/echo/v5"
 	"github.com/mileusna/useragent"
@@ -27,27 +28,12 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-func update_package(app core.App, package_name string, record_id string, de_listed bool) error {
-	record, err := app.Dao().FindRecordById(package_name, record_id)
+func create_package(app core.App, c echo.Context) error {
+	package_name, err := parse.EncodeName(c.FormValue("name"))
 	if err != nil {
 		return err
 	}
 
-	form := forms.NewRecordUpsert(app, record)
-
-	form.LoadData(map[string]any{
-		"de_listed": de_listed,
-	})
-
-	if err := form.Submit(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func create_package(app core.App, c echo.Context) error {
-	package_name := c.FormValue("name")
 	exists, _ := app.Dao().FindCollectionByNameOrId(package_name)
 	auth, err := app.Dao().FindCollectionByNameOrId("just_auth_system")
 	if err != nil {
@@ -88,17 +74,17 @@ func create_package(app core.App, c echo.Context) error {
 				Values:    []string{"public", "private"},
 			},
 		})
-      
-      form.Schema.AddField(&schema.SchemaField{
-         Name:     "group",
-         Type:     schema.FieldTypeSelect,
-         Required: true,
-         Unique:   false,
-         Options: &schema.SelectOptions{
-            MaxSelect: 1,
-            Values:    []string{"local", "net", "both"},
-         },
-      })
+
+		form.Schema.AddField(&schema.SchemaField{
+			Name:     "group",
+			Type:     schema.FieldTypeSelect,
+			Required: true,
+			Unique:   false,
+			Options: &schema.SelectOptions{
+				MaxSelect: 1,
+				Values:    []string{"local", "net", "both"},
+			},
+		})
 
 		form.Schema.AddField(&schema.SchemaField{
 			Name:     "description",
@@ -185,7 +171,7 @@ func check_auth(app core.App, c echo.Context, package_name string) bool {
 		return true
 	}
 
-	records, err := app.Dao().FindRecordsByExpr(c.FormValue("name"), dbx.HashExp{"visibility": "public"})
+	records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
 	if err != nil {
 		return false
 	}
@@ -205,9 +191,13 @@ func check_auth(app core.App, c echo.Context, package_name string) bool {
 }
 
 func create_version(app core.App, c echo.Context) error {
-	package_name := c.FormValue("name")
+	package_name, err := parse.EncodeName(c.FormValue("name"))
+	if err != nil {
+		return err
+	}
+
 	if check_auth(app, c, package_name) == false {
-		return errors.New("the authorized record model is not allowed to perform this action")
+		return errors.New(fmt.Sprintf("You do not have permission to publish '%s'. Are you logged in as the correct user?", c.FormValue("name")))
 	}
 
 	collection, err := app.Dao().FindCollectionByNameOrId(package_name)
@@ -246,7 +236,7 @@ func hasLicense(record *models.Record) string {
 }
 
 func package_index(app core.App, c echo.Context, split []string) error {
-	package_name := split[0]
+	package_name, err := parse.EncodeName(split[0])
 	collection, err := app.Dao().FindCollectionByNameOrId(package_name)
 	records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
 
@@ -291,7 +281,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 			Dist: DistInfo{
 				Version:   record.GetString("version"),
 				Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
-				Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, record.GetString("version"), package_name),
+				Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", split[0], record.GetString("version"), split[0]),
 				Size:      attribute.Size,
 			},
 		}
@@ -319,7 +309,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 	}
 
 	return c.JSON(http.StatusOK, &PackageInfo{
-		Name:        package_name,
+		Name:        split[0],
 		Id:          collection.Id,
 		Description: latest.GetString("description"),
 		Versions:    pkgs,
@@ -327,7 +317,7 @@ func package_index(app core.App, c echo.Context, split []string) error {
 		Dist: DistInfo{
 			Version:   latest.GetString("version"),
 			Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s.tgz", package_name, package_name),
+			Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s.tgz", split[0], split[0]),
 			Size:      attribute.Size,
 		},
 		License: latest.GetString("license"),
@@ -335,11 +325,11 @@ func package_index(app core.App, c echo.Context, split []string) error {
 }
 
 func package_version(app core.App, c echo.Context, split []string) error {
-	package_name := split[0]
+	package_name, err := parse.EncodeName(split[0])
 	package_version := split[1]
 	dependencies := make(map[string]string)
 
-	records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"version": package_version})
+	records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public", "version": package_version})
 	_ = json.Unmarshal([]byte(records[0].GetString("dependencies")), &dependencies)
 
 	if err != nil {
@@ -373,7 +363,7 @@ func package_version(app core.App, c echo.Context, split []string) error {
 		Dist: DistInfo{
 			Version:   records[0].GetString("version"),
 			Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", package_name, records[0].GetString("version"), package_name),
+			Tarball:   fmt.Sprintf("https://r.justjs.dev/%s/_/%s/%s.tgz", split[0], records[0].GetString("version"), split[0]),
 			Size:      attribute.Size,
 		},
 	})
@@ -382,9 +372,10 @@ func package_version(app core.App, c echo.Context, split []string) error {
 func get_file(app core.App, c echo.Context, split []string, file_name string, raw_name string, user_agent string) error {
 	add_mod := strings.NewReplacer(`from './`, fmt.Sprintf(`from './%s/`, raw_name), `from "./`, fmt.Sprintf(`from "./%s/`, raw_name))
 	regex := regexp.MustCompile("curl")
-
+   
 	if len(split) == 1 {
-		records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"visibility": "public"})
+		encoded_split, _ := parse.EncodeName(split[0])
+		records, err := app.Dao().FindRecordsByExpr(encoded_split, dbx.HashExp{"visibility": "public"})
 		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
 
 		if err != nil {
@@ -406,7 +397,8 @@ func get_file(app core.App, c echo.Context, split []string, file_name string, ra
 			return c.String(http.StatusOK, add_mod.Replace(string(file[file_name].Data)))
 		}
 	} else {
-		records, err := app.Dao().FindRecordsByExpr(split[0], dbx.HashExp{"version": split[1]})
+		encoded_split, _ := parse.EncodeName(split[0])
+		records, err := app.Dao().FindRecordsByExpr(encoded_split, dbx.HashExp{"version": split[1]})
 		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
 
 		if err != nil {
@@ -472,12 +464,11 @@ func main() {
 			Path:   "/:name/_/:version/:archive",
 			Handler: func(c echo.Context) error {
 				fs, err := app.NewFilesystem()
-				package_name := c.PathParam("name")
+            package_name, _ := parse.EncodeName(c.PathParam("name"))
 				package_version := c.PathParam("version")
-
-				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"version": package_version})
+				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public", "version": package_version})
 				filePath := fmt.Sprintf("%s/%s", records[0].BaseFilesPath(), records[0].GetString("tarball"))
-				servedName := fmt.Sprintf("%s-%s.tgz", package_name, records[0].GetString("version"))
+				servedName := fmt.Sprintf("%s-%s.tgz", c.PathParam("name"), records[0].GetString("version"))
 
 				if err != nil {
 					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
@@ -508,11 +499,10 @@ func main() {
 			Path:   "/:name/_/:archive",
 			Handler: func(c echo.Context) error {
 				fs, err := app.NewFilesystem()
-				package_name := c.PathParam("name")
-
+				package_name, _ := parse.EncodeName(c.PathParam("name"))
 				records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public"})
 				filePath := fmt.Sprintf("%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
-				servedName := fmt.Sprintf("%s-%s.tgz", package_name, records[len(records)-1].GetString("version"))
+				servedName := fmt.Sprintf("%s-%s.tgz", c.PathParam("name"), records[len(records)-1].GetString("version"))
 
 				if err != nil {
 					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
@@ -542,9 +532,9 @@ func main() {
 			Method: http.MethodGet,
 			Path:   "/:name_version/*",
 			Handler: func(c echo.Context) error {
-            user_agent := useragent.Parse(c.Request().UserAgent()).String
-            name_version := c.PathParam("name_version")
-            split_path := strings.Split(c.PathParam("name_version"), "@")
+				user_agent := useragent.Parse(c.Request().UserAgent()).String
+				name_version := c.PathParam("name_version")
+				split_path := strings.Split(c.PathParam("name_version"), "@")
 
 				return get_file(app, c, split_path, c.PathParam("*"), name_version, user_agent)
 			},
@@ -562,7 +552,9 @@ func main() {
 			Path:   "/create",
 			Handler: func(c echo.Context) error {
 				if err := create_package(app, c); err != nil {
-					return c.JSON(http.StatusInternalServerError, &ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					return c.JSON(http.StatusInternalServerError, &Response{Status: http.StatusInternalServerError, Message: map[string]interface{}{
+						"error": err.Error(),
+					}})
 				}
 
 				if err := create_version(app, c); err != nil {
@@ -587,7 +579,8 @@ func main() {
 			Method: http.MethodGet,
 			Path:   "/maintainers/:name",
 			Handler: func(c echo.Context) error {
-				records, err := app.Dao().FindRecordsByExpr(c.PathParam("name"), dbx.HashExp{"visibility": "public"})
+				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
+				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
 				if err != nil {
 					return c.JSON(http.StatusNotFound, &Response{Status: http.StatusNotFound, Message: map[string]interface{}{
 						"error": "package or file not found",
@@ -614,7 +607,8 @@ func main() {
 			Method: http.MethodGet,
 			Path:   "/dependencies/:name",
 			Handler: func(c echo.Context) error {
-				records, err := app.Dao().FindRecordsByExpr(c.PathParam("name"), dbx.HashExp{"visibility": "public"})
+				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
+				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
 				if err != nil {
 					return c.JSON(http.StatusNotFound, &Response{Status: http.StatusNotFound, Message: map[string]interface{}{
 						"error": "package or file not found",
@@ -667,7 +661,7 @@ func main() {
 				}
 
 				for _, collection := range collections {
-					pkgs[collection.Name] = map[string]interface{}{
+					pkgs[parse.OriginalName(collection.Name)] = map[string]interface{}{
 						"id":      collection.Id,
 						"created": collection.Created,
 						"updated": collection.Updated,
