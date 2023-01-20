@@ -90,7 +90,7 @@ func create_package(app core.App, c echo.Context) error {
 		})
       
       form.Schema.AddField(&schema.SchemaField{
-         Name:     "type",
+         Name:     "group",
          Type:     schema.FieldTypeSelect,
          Required: true,
          Unique:   false,
