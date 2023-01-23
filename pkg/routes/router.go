@@ -242,6 +242,7 @@ func Router(app core.App) error {
 				for _, collection := range collections {
 					pkgs[parse.OriginalName(collection.Name)] = map[string]interface{}{
 						"id":      collection.Id,
+						"b62":     collection.Name,
 						"created": collection.Created,
 						"updated": collection.Updated,
 					}
