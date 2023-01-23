@@ -1,4 +1,4 @@
-module just/registry
+module just
 
 go 1.19
 

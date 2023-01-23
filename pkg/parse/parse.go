@@ -8,7 +8,7 @@ import (
 )
 
 func EncodeName(package_name string) (string, error) {
-	matched, _ := regexp.MatchString(`^[a-zA-Z0-9@][a-zA-Z0-9\/_.-]*$`, package_name)
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9*][a-zA-Z0-9:\/_.-]*$`, package_name)
 	// format := strings.NewReplacer("-", "_JFMTdash_", ".", "_JFMTdot_", "@", "_JFMTat_", "/", "_JFMTslash_")
 	if matched {
 		// return format.Replace(package_name), nil

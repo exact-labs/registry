@@ -1,4 +1,4 @@
-package main
+package templates
 
 import (
 	"archive/zip"
@@ -50,7 +50,7 @@ func recursiveZip(pathToZip, destinationPath string) error {
 	return nil
 }
 
-func templatesDir() string {
+func Dir() string {
 	if strings.HasPrefix(os.Args[0], os.TempDir()) {
 		return "./templates"
 	}
@@ -90,31 +90,31 @@ func listDir(dirName string) ([]string, error) {
 	return list, nil
 }
 
-func copyTemplates() error {
-	if err := os.RemoveAll(templatesDir()); err != nil {
+func Copy() error {
+	if err := os.RemoveAll(Dir()); err != nil {
 		return err
 	}
 
-	if err := ensureDir(templatesDir()); err != nil {
+	if err := ensureDir(Dir()); err != nil {
 		return err
 	}
 
-	if _, err := git.PlainClone(templatesDir(), false, &git.CloneOptions{URL: "https://github.com/exact-rs/templates", Progress: os.Stdout}); err != nil {
+	if _, err := git.PlainClone(Dir(), false, &git.CloneOptions{URL: "https://github.com/exact-rs/templates", Progress: os.Stdout}); err != nil {
 		return err
 	}
 
-	if err := os.RemoveAll(fmt.Sprintf("%s/.git", templatesDir())); err != nil {
+	if err := os.RemoveAll(fmt.Sprintf("%s/.git", Dir())); err != nil {
 		return err
 	}
 
-	files, err := listDir(templatesDir())
+	files, err := listDir(Dir())
 	if err != nil {
 		return err
 	}
 
 	for _, folder := range files {
-		recursiveZip(fmt.Sprintf("%s/%s", templatesDir(), folder), fmt.Sprintf("%s/%s.zip", templatesDir(), folder))
-      if err := os.RemoveAll(fmt.Sprintf("%s/%s", templatesDir(), folder)); err != nil {
+		recursiveZip(fmt.Sprintf("%s/%s", Dir(), folder), fmt.Sprintf("%s/%s.zip", Dir(), folder))
+      if err := os.RemoveAll(fmt.Sprintf("%s/%s", Dir(), folder)); err != nil {
          return err
       }
 	}

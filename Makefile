@@ -1,6 +1,9 @@
 clean:
 	rm registry
 build:
+	go build . && mv just registry
+debug:
 	go build .
+	mv just debug/bin
 run:
-	go run . serve
+	cd debug && go run ../ serve
