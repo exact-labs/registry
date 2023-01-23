@@ -10,6 +10,7 @@ import (
 
 	"just/pkg/create"
 	"just/pkg/parse"
+   "just/pkg/response"
 	"just/pkg/routes/handler"
 	"just/pkg/templates"
 	"just/pkg/types"
@@ -233,10 +234,11 @@ func Router(app core.App) error {
 
 				result, err := search.NewProvider(fieldResolver).
 					Query(app.Dao().CollectionQuery()).
+					Filter([]search.FilterData{"id!='_pb_users_auth_'"}).
 					ParseAndExec(c.QueryString(), &collections)
 
 				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+					return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				for _, collection := range collections {
@@ -248,12 +250,10 @@ func Router(app core.App) error {
 					}
 				}
 
-				delete(pkgs, "just_auth_system")
-
 				return c.JSON(http.StatusOK, &types.Result{
 					Page:       result.Page,
 					PerPage:    result.PerPage,
-					TotalItems: result.TotalItems - 1,
+					TotalItems: result.TotalItems,
 					TotalPages: result.TotalPages,
 					Packages:   pkgs,
 				})
