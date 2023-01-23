@@ -21,6 +21,15 @@ func InspectRuntime() (baseDir string, withGoRun bool) {
 	return
 }
 
+func TarPath() string {
+   _, DebugMode := InspectRuntime()
+   if DebugMode {
+      return "http://localhost:8090"
+   } else {
+      return "https://r.justjs.dev"
+   }
+}
+
 func ReadTar(source string) (fstest.MapFS, error) {
 	file, err := os.Open(source)
 	if err != nil {
