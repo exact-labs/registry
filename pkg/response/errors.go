@@ -1,6 +1,6 @@
 package response
 
-import "just/pkg/types"
+import "registry/pkg/types"
 
 func ErrorFromString(status int64, error string) types.Response {
 	return types.Response{Status: status, Message: map[string]interface{}{

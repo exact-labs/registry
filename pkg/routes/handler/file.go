@@ -2,68 +2,126 @@ package handler
 
 import (
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
 
-	"just/pkg/helpers"
-	"just/pkg/parse"
-	"just/pkg/types"
+	"registry/pkg/helpers"
+	"registry/pkg/parse"
+	"registry/pkg/response"
 
+	"github.com/evanw/esbuild/pkg/api"
 	"github.com/labstack/echo/v5"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func GetFile(app core.App, c echo.Context, split []string, file_name string, raw_name string, user_agent string) error {
-	add_mod := strings.NewReplacer(`from './`, fmt.Sprintf(`from './%s/`, raw_name), `from "./`, fmt.Sprintf(`from "./%s/`, raw_name))
-	regex := regexp.MustCompile("curl")
+func FileNotFound(info string) string {
+	return fmt.Sprintf(`/* r.justjs.dev - error */
+throw new Error("[r.justjs.dev] " + "resovleESModule: open %s: no such file or directory");
+export default null;
+`, info)
+}
 
-	if len(split) == 1 {
-		encoded_split, _ := parse.EncodeName(split[0])
-		records, err := app.Dao().FindRecordsByExpr(encoded_split, dbx.HashExp{"visibility": "public"})
-		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
+func IndexFile(name string, version string, index string) string {
+   return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
+export * from "/v052/%[1]s/%[2]s/es2022/%s";
+`, name, version, index)
+}
 
+func GetIndex(app core.App, c echo.Context) error {
+	getSemVer := regexp.MustCompile(`\d+(\.\d+)+`).FindAllString
+	semVerCheck := regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`).MatchString
+
+	if semVerCheck(helpers.SplitLast(strings.Split(c.PathParam("package"), "@"))) {
+		packageVersion := getSemVer(c.PathParam("package"), -1)[0]
+		packageName := strings.ReplaceAll(c.PathParam("package"), fmt.Sprintf("@%s", packageVersion), "")
+		encodedName, err := parse.EncodeName(packageName)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
 		}
-
-		file, err := helpers.ReadTar(filePath)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
-		}
-
-		if file_name == "index_file" {
-			if regex.MatchString(user_agent) {
-				return c.String(http.StatusOK, add_mod.Replace(string(file[records[len(records)-1].GetString("index")].Data)))
-			} else {
-				return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%v/%v", split[0], records[len(records)-1].GetString("index")))
-			}
-		} else {
-			return c.String(http.StatusOK, add_mod.Replace(string(file[file_name].Data)))
-		}
+      
+      records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public", "version": packageVersion})
+      if err != nil {
+         return c.JSON(500, response.ErrorFromString(500, err.Error()))
+      }
+      
+      record := records[0]
+		return c.String(200, IndexFile(packageName, packageVersion, record.GetString("index")))
 	} else {
-		encoded_split, _ := parse.EncodeName(split[0])
-		records, err := app.Dao().FindRecordsByExpr(encoded_split, dbx.HashExp{"version": split[1]})
-		filePath := fmt.Sprintf("packages/storage/%s/%s", records[len(records)-1].BaseFilesPath(), records[len(records)-1].GetString("tarball"))
-
+      packageName := c.PathParam("package")
+		encodedName, err := parse.EncodeName(packageName)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
 		}
-
-		file, err := helpers.ReadTar(filePath)
+      
+		records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public"})
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
 		}
 
-		if file_name == "index_file" {
-			if regex.MatchString(user_agent) {
-				return c.String(http.StatusOK, add_mod.Replace(string(file[records[len(records)-1].GetString("index")].Data)))
-			} else {
-				return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%v/%v", raw_name, records[len(records)-1].GetString("index")))
-			}
-		} else {
-			return c.String(http.StatusOK, add_mod.Replace(string(file[file_name].Data)))
-		}
+		record := records[len(records)-1]
+      return c.String(200, IndexFile(packageName, record.GetString("version"), record.GetString("index")))
 	}
+}
+
+func GetFile(app core.App, c echo.Context) error {
+	packageName := c.PathParam("package")
+	packageVersion := c.PathParam("version")
+	esVersion := c.PathParam("esm")
+	fileName := c.PathParam("*")
+
+	add_mod := strings.NewReplacer(`from"./`, fmt.Sprintf(`from"/v052/%s/%s/%s/`, packageName, packageVersion, esVersion))
+	encodedName, err := parse.EncodeName(packageName)
+	if err != nil {
+		return c.JSON(500, response.ErrorFromString(500, err.Error()))
+	}
+
+	records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public", "version": packageVersion})
+	if err != nil {
+		return c.JSON(500, response.ErrorFromString(500, err.Error()))
+	}
+
+	record := records[len(records)-1]
+	filePath := fmt.Sprintf("packages/storage/%s/%s", record.BaseFilesPath(), record.GetString("tarball"))
+	banner := map[string]string{"js": fmt.Sprintf("/* r.justjs.dev - esbuild bundle(%s@%s) es2022 production */", packageName, packageVersion)}
+
+	file, err := helpers.ReadFromTar(fileName, filePath)
+	if err != nil {
+		return c.String(404, FileNotFound(fmt.Sprintf("/vfs/%s/%s/%s/%s", encodedName, packageName, packageVersion, fileName)))
+	}
+
+	contents := &api.StdinOptions{
+		Contents:   string(file),
+		Sourcefile: fileName,
+	}
+
+	loader := map[string]api.Loader{
+		".wasm":  api.LoaderDataURL,
+		".svg":   api.LoaderDataURL,
+		".png":   api.LoaderDataURL,
+		".webp":  api.LoaderDataURL,
+		".ttf":   api.LoaderDataURL,
+		".eot":   api.LoaderDataURL,
+		".woff":  api.LoaderDataURL,
+		".woff2": api.LoaderDataURL,
+	}
+
+	result := api.Build(api.BuildOptions{
+		Loader:            loader,
+		Stdin:             contents,
+		EntryPoints:       nil,
+		MinifyWhitespace:  true,
+		MinifyIdentifiers: true,
+		MinifySyntax:      true,
+		KeepNames:         true,
+		Write:             false,
+		Bundle:            false,
+		Banner:            banner,
+		Target:            api.ES2022,
+		Format:            api.FormatESModule,
+		LogLevel:          api.LogLevelSilent,
+		Platform:          api.PlatformBrowser,
+	})
+
+	return c.String(200, add_mod.Replace(string(result.OutputFiles[0].Contents)))
 }

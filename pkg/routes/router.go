@@ -8,12 +8,12 @@ import (
 	"regexp"
 	"strings"
 
-	"just/pkg/create"
-	"just/pkg/parse"
-   "just/pkg/response"
-	"just/pkg/routes/handler"
-	"just/pkg/templates"
-	"just/pkg/types"
+	"registry/pkg/create"
+	"registry/pkg/parse"
+   "registry/pkg/response"
+	"registry/pkg/routes/handler"
+	"registry/pkg/templates"
+	"registry/pkg/types"
 
 	"github.com/labstack/echo/v5"
 	"github.com/mileusna/useragent"
@@ -26,7 +26,7 @@ import (
 
 func Router(app core.App) error {
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.GET("/templates/*", apis.StaticDirectoryHandler(os.DirFS(templates.Dir()), false))
+		e.Router.GET("/~/templates/*", apis.StaticDirectoryHandler(os.DirFS(templates.Dir()), false))
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
@@ -41,21 +41,23 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/:name_version",
+			Path:   "/:package",
 			Handler: func(c echo.Context) error {
-				name_version := c.PathParam("name_version")
-				split_path := strings.Split(c.PathParam("name_version"), "@")
+				pkg := c.PathParam("package")
 				regex := regexp.MustCompile(`Wget/|curl|^$`)
 				user_agent := useragent.Parse(c.Request().UserAgent()).String
+            
+            split_path := strings.Split(c.PathParam("package"), "@")
+
 
 				if regex.MatchString(user_agent) {
-					return handler.GetFile(app, c, split_path, "index_file", name_version, user_agent)
+					return handler.GetIndex(app, c)
 				} else {
-					if len(split_path) == 1 || split_path[0] == "" && len(split_path) == 1 {
-						return handler.PackageIndex(app, c)
-					} else {
-						return handler.PackageVersion(app, c, split_path)
-					}
+               if parse.HasVersion(pkg) {
+                  return handler.PackageVersion(app, c, split_path)
+               } else {
+                  return handler.PackageIndex(app, c)
+               }
 				}
 			},
 			Middlewares: []echo.MiddlewareFunc{
@@ -126,13 +128,10 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/:name_version/*",
+			Path:   "/v052/:package/:version/:esm/*",
 			Handler: func(c echo.Context) error {
-				user_agent := useragent.Parse(c.Request().UserAgent()).String
-				name_version := c.PathParam("name_version")
-				split_path := strings.Split(c.PathParam("name_version"), "@")
-
-				return handler.GetFile(app, c, split_path, c.PathParam("*"), name_version, user_agent)
+				// user_agent := useragent.Parse(c.Request().UserAgent()).String
+				return handler.GetFile(app, c)
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
@@ -141,7 +140,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodPost,
-			Path:   "/create",
+			Path:   "/api/v1/pkg/create",
 			Handler: func(c echo.Context) error {
 				if err := create.Package(app, c); err != nil {
 					return c.JSON(http.StatusInternalServerError, &types.Response{Status: http.StatusInternalServerError, Message: map[string]interface{}{
@@ -165,14 +164,12 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/maintainers/:name",
+			Path:   "/~/maintainers/:name",
 			Handler: func(c echo.Context) error {
 				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
 				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
 				if err != nil {
-					return c.JSON(http.StatusNotFound, &types.Response{Status: http.StatusNotFound, Message: map[string]interface{}{
-						"error": "package or file not found",
-					}})
+               return c.JSON(404, response.ErrorFromString(404, "package not found"))
 				}
 
 				if c.QueryParam("type") == "expanded" {
@@ -189,7 +186,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/dependencies/:name",
+			Path:   "/~/dependencies/:name",
 			Handler: func(c echo.Context) error {
 				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
 				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
@@ -223,7 +220,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/packages",
+			Path:   "/~/packages",
 			Handler: func(c echo.Context) error {
 				fieldResolver := search.NewSimpleFieldResolver(
 					"id", "created", "updated", "name", "system", "type",

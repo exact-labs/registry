@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"just/pkg/parse"
+	"registry/pkg/parse"
    "golang.org/x/exp/slices"
 
 	"github.com/labstack/echo/v5"

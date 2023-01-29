@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"just/pkg/helpers"
-	"just/pkg/parse"
-	"just/pkg/response"
-	"just/pkg/types"
+	"registry/pkg/helpers"
+	"registry/pkg/parse"
+	"registry/pkg/response"
+	"registry/pkg/types"
 
 	"github.com/labstack/echo/v5"
 	"github.com/pocketbase/dbx"
@@ -17,7 +17,7 @@ import (
 )
 
 func PackageIndex(app core.App, c echo.Context) error {
-	package_name, err := parse.EncodeName(c.PathParam("name_version"))
+	package_name, err := parse.EncodeName(c.PathParam("package"))
 	if err != nil {
 		return c.JSON(500, response.ErrorFromString(500, err.Error()))
 	}
@@ -71,7 +71,7 @@ func PackageIndex(app core.App, c echo.Context) error {
 			Dist: types.DistInfo{
 				Version:   record.GetString("version"),
 				Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
-				Tarball:   fmt.Sprintf("%s/%s/_/%s/%s.tgz", helpers.TarPath(), c.PathParam("name_version"), record.GetString("version"), c.PathParam("name_version")),
+				Tarball:   fmt.Sprintf("%s/%s/_/%s/%s.tgz", helpers.TarPath(), c.PathParam("package"), record.GetString("version"), c.PathParam("package")),
 				Size:      attribute.Size,
 			},
 		}
@@ -99,7 +99,7 @@ func PackageIndex(app core.App, c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, &types.PackageInfo{
-		Name:        c.PathParam("name_version"),
+		Name:        c.PathParam("package"),
 		Id:          collection.Id,
 		Description: latest.GetString("description"),
 		Versions:    pkgs,
@@ -107,7 +107,7 @@ func PackageIndex(app core.App, c echo.Context) error {
 		Dist: types.DistInfo{
 			Version:   latest.GetString("version"),
 			Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:   fmt.Sprintf("%s/%s/_/%s.tgz", helpers.TarPath(), c.PathParam("name_version"), c.PathParam("name_version")),
+			Tarball:   fmt.Sprintf("%s/%s/_/%s.tgz", helpers.TarPath(), c.PathParam("package"), c.PathParam("package")),
 			Size:      attribute.Size,
 		},
 		License: latest.GetString("license"),

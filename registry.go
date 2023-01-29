@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	"just/pkg/helpers"
-	"just/pkg/routes"
-	"just/pkg/templates"
+	"registry/pkg/helpers"
+	"registry/pkg/routes"
+	"registry/pkg/templates"
 
 	"github.com/pocketbase/pocketbase"
 )
