@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -39,5 +40,5 @@ func GetJustVersion() (string, error) {
 		return "", err
 	}
 
-	return strings.ReplaceAll(data.Crate.Version, ".", ""), nil
+	return fmt.Sprintf("v%s", strings.ReplaceAll(data.Crate.Version, ".", "")), nil
 }

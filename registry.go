@@ -1,8 +1,8 @@
 package main
 
 import (
-   "os"
 	"log"
+	"os"
 
 	"registry/pkg/helpers"
 	"registry/pkg/routes"
@@ -22,14 +22,14 @@ func main() {
 	if err := routes.Router(app); err != nil {
 		log.Fatal(err)
 	}
-   
-   version, err := helpers.GetJustVersion(); 
-   if err != nil {
-      log.Fatal(err)
-   } else {
-      os.Setenv("JUST_VERSION", version)
-   }
-   
+
+	version, err := helpers.GetJustVersion()
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		os.Setenv("JUST_VERSION", version)
+	}
+
 	if err := templates.Copy(); err != nil {
 		log.Fatal(err)
 	}

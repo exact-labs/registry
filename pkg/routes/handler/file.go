@@ -133,7 +133,7 @@ func GetFile(app core.App, c echo.Context) error {
 		return c.String(200, PackageError(fmt.Sprintf("BuildError: target %s cannot be used for %s", esVersion, c.PathParam("package"))))
 	}
 
-	add_mod := strings.NewReplacer(`from"./`, fmt.Sprintf(`from"/%s/%s/%s/%s/`, os.Getenv("JUST_VERSION"), packageName, packageVersion, esVersion))
+	setMod := strings.NewReplacer(`from"./`, fmt.Sprintf(`from"/%s/%s/%s/%s/`, os.Getenv("JUST_VERSION"), packageName, packageVersion, esVersion))
 	encodedName, err := parse.EncodeName(packageName)
 	if err != nil {
 		return c.JSON(500, response.ErrorFromString(500, err.Error()))
@@ -186,5 +186,31 @@ func GetFile(app core.App, c echo.Context) error {
 		Platform:          api.PlatformBrowser,
 	})
 
-	return c.String(200, add_mod.Replace(string(result.OutputFiles[0].Contents)))
+	return c.String(200, setMod.Replace(string(result.OutputFiles[0].Contents)))
+}
+
+func GetSource(app core.App, c echo.Context) error {
+   packageName := c.PathParam("package")
+   packageVersion := c.PathParam("version")
+   fileName := c.PathParam("*")
+
+   encodedName, err := parse.EncodeName(packageName)
+   if err != nil {
+      return c.JSON(500, response.ErrorFromString(500, err.Error()))
+   }
+
+   records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public", "version": packageVersion})
+   if err != nil {
+      return c.JSON(500, response.ErrorFromString(500, err.Error()))
+   }
+
+   record := records[len(records)-1]
+   filePath := fmt.Sprintf("packages/storage/%s/%s", record.BaseFilesPath(), record.GetString("tarball"))
+
+   file, err := helpers.ReadFromTar(fileName, filePath)
+   if err != nil {
+      return c.JSON(404, response.ErrorFromString(404, "file does not exist"))
+   }
+
+   return c.String(200, string(file))
 }

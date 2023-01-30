@@ -9,7 +9,7 @@ import (
 
 	"registry/pkg/create"
 	"registry/pkg/parse"
-   "registry/pkg/response"
+	"registry/pkg/response"
 	"registry/pkg/routes/handler"
 	"registry/pkg/templates"
 	"registry/pkg/types"
@@ -26,7 +26,7 @@ import (
 func Router(app core.App) error {
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.GET("/api/:ver/templates/*", apis.StaticDirectoryHandler(os.DirFS(templates.Dir()), false))
-      
+
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
 			Path:   "/",
@@ -44,32 +44,32 @@ func Router(app core.App) error {
 			Handler: func(c echo.Context) error {
 				checkAgent := regexp.MustCompile(`Wget/|curl|^$`).MatchString
 				userAgent := useragent.Parse(c.Request().UserAgent()).String
-         
+
 				if checkAgent(userAgent) {
 					return handler.GetIndex(app, c)
 				} else {
-               if parse.HasSemVersion(c.PathParam("package")) {
-                  return handler.PackageVersion(app, c)
-               } else {
-                  return handler.PackageIndex(app, c)
-               }
+					if parse.HasSemVersion(c.PathParam("package")) {
+						return handler.PackageVersion(app, c)
+					} else {
+						return handler.PackageIndex(app, c)
+					}
 				}
 			},
 			Middlewares: []echo.MiddlewareFunc{
 				apis.ActivityLogger(app),
 			},
 		})
-      
-      e.Router.AddRoute(echo.Route{
-         Method: http.MethodGet,
-         Path:   "/:package/mod",
-         Handler: func(c echo.Context) error {
-           return handler.GetIndex(app, c)
-         },
-         Middlewares: []echo.MiddlewareFunc{
-            apis.ActivityLogger(app),
-         },
-      })
+
+		e.Router.AddRoute(echo.Route{
+			Method: http.MethodGet,
+			Path:   "/:package/mod",
+			Handler: func(c echo.Context) error {
+				return handler.GetIndex(app, c)
+			},
+			Middlewares: []echo.MiddlewareFunc{
+				apis.ActivityLogger(app),
+			},
+		})
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
@@ -83,16 +83,16 @@ func Router(app core.App) error {
 				servedName := fmt.Sprintf("%s-%s.tgz", c.PathParam("name"), records[0].GetString("version"))
 
 				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+               return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+               return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 				defer fs.Close()
 
 				if err := fs.Serve(c.Response(), c.Request(), filePath, servedName); err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+               return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				return nil
@@ -113,16 +113,16 @@ func Router(app core.App) error {
 				servedName := fmt.Sprintf("%s-%s.tgz", c.PathParam("name"), records[len(records)-1].GetString("version"))
 
 				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+               return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				if err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+               return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 				defer fs.Close()
 
 				if err := fs.Serve(c.Response(), c.Request(), filePath, servedName); err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.ErrorResponse{Status: http.StatusInternalServerError, Error: err})
+               return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				return nil
@@ -136,7 +136,6 @@ func Router(app core.App) error {
 			Method: http.MethodGet,
 			Path:   fmt.Sprintf("/%s/:package/:version/:esm/*", os.Getenv("JUST_VERSION")),
 			Handler: func(c echo.Context) error {
-				// user_agent := useragent.Parse(c.Request().UserAgent()).String
 				return handler.GetFile(app, c)
 			},
 			Middlewares: []echo.MiddlewareFunc{
@@ -144,20 +143,27 @@ func Router(app core.App) error {
 			},
 		})
 
+      e.Router.AddRoute(echo.Route{
+         Method: http.MethodGet,
+         Path:   fmt.Sprintf("/source/:package/:version/*"),
+         Handler: func(c echo.Context) error {
+            return handler.GetSource(app, c)
+         },
+         Middlewares: []echo.MiddlewareFunc{
+            apis.ActivityLogger(app),
+         },
+      })
+
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodPost,
 			Path:   "/api/:ver/create",
 			Handler: func(c echo.Context) error {
 				if err := create.Package(app, c); err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.Response{Status: http.StatusInternalServerError, Message: map[string]interface{}{
-						"error": err.Error(),
-					}})
+					return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				if err := create.Version(app, c); err != nil {
-					return c.JSON(http.StatusInternalServerError, &types.Response{Status: http.StatusInternalServerError, Message: map[string]interface{}{
-						"error": err.Error(),
-					}})
+					return c.JSON(500, response.ErrorFromString(500, err.Error()))
 				}
 
 				return c.JSON(http.StatusOK, &types.Response{Status: http.StatusOK, Message: map[string]interface{}{"created": c.FormValue("name")}})
@@ -170,12 +176,12 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/api/maintainers/:name",
+			Path:   "/maintainers/:name",
 			Handler: func(c echo.Context) error {
 				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
 				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
 				if err != nil {
-               return c.JSON(404, response.ErrorFromString(404, "package not found"))
+					return c.JSON(404, response.ErrorFromString(404, "package not found"))
 				}
 
 				if c.QueryParam("type") == "expanded" {
@@ -226,7 +232,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/api/packages",
+			Path:   "/packages",
 			Handler: func(c echo.Context) error {
 				fieldResolver := search.NewSimpleFieldResolver(
 					"id", "created", "updated", "name", "system", "type",
