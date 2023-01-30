@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"registry/pkg/helpers"
@@ -12,6 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/models"
 )
 
 func FileNotFound(info string) string {
@@ -22,16 +24,38 @@ export default null;
 }
 
 func PackageOnlyError(info string) string {
-   return fmt.Sprintf(`/* r.justjs.dev - error */
+	return fmt.Sprintf(`/* r.justjs.dev - error */
 throw new Error("[r.justjs.dev] " + "ImportError: %s can only be used as local package");
 export default null;
 `, info)
 }
 
-func IndexFile(name string, version string, index string) string {
-   return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
+func IndexFile(name string, version string, index string, defaultExport bool) string {
+	if defaultExport {
+		return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
+export * from "/v052/%[1]s/%[2]s/es2022/%s";
+export { default } from "/v052/%[1]s/%[2]s/es2022/%s";
+`, name, version, index)
+	} else {
+		return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
 export * from "/v052/%[1]s/%[2]s/es2022/%s";
 `, name, version, index)
+	}
+}
+
+func HasDefaultExport(record *models.Record) (bool, error) {
+	hasExport := regexp.MustCompile(`export default | as default}`).MatchString
+	filePath := fmt.Sprintf("packages/storage/%s/%s", record.BaseFilesPath(), record.GetString("tarball"))
+	file, err := helpers.ReadFromTar(record.GetString("index"), filePath)
+	if err != nil {
+		return false, err
+	}
+   
+	if hasExport(string(file)) {
+		return true, nil
+	}
+   
+	return false, nil
 }
 
 func GetIndex(app core.App, c echo.Context) error {
@@ -42,36 +66,46 @@ func GetIndex(app core.App, c echo.Context) error {
 		if err != nil {
 			return c.JSON(500, response.ErrorFromString(500, err.Error()))
 		}
-      
-      records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public", "version": packageVersion})
-      if err != nil {
-         return c.JSON(500, response.ErrorFromString(500, err.Error()))
-      }
-      
-      record := records[0]
-      if record.GetString("group") == "local" {
-         return c.String(404, PackageOnlyError(fmt.Sprintf(`%s@%s/%s`, packageName, packageVersion)))
-      }
-      
-		return c.String(200, IndexFile(packageName, packageVersion, record.GetString("index")))
+
+		records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public", "version": packageVersion})
+		if err != nil {
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
+		}
+
+		record := records[0]
+		if record.GetString("group") == "local" {
+			return c.String(200, PackageOnlyError(fmt.Sprintf(`%s@%s`, packageName, packageVersion)))
+		}
+
+		defaultExport, err := HasDefaultExport(record)
+		if err != nil {
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
+		}
+
+		return c.String(200, IndexFile(packageName, packageVersion, record.GetString("index"), defaultExport))
 	} else {
-      packageName := c.PathParam("package")
+		packageName := c.PathParam("package")
 		encodedName, err := parse.EncodeName(packageName)
 		if err != nil {
 			return c.JSON(500, response.ErrorFromString(500, err.Error()))
 		}
-      
+
 		records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public"})
 		if err != nil {
 			return c.JSON(500, response.ErrorFromString(500, err.Error()))
 		}
 
 		record := records[len(records)-1]
-      if record.GetString("group") == "local" {
-         return c.String(404, PackageOnlyError(fmt.Sprintf(`%s@%s/%s`, packageName, record.GetString("version"))))
-      }
-      
-      return c.String(200, IndexFile(packageName, record.GetString("version"), record.GetString("index")))
+		if record.GetString("group") == "local" {
+			return c.String(200, PackageOnlyError(fmt.Sprintf(`%s@%s`, packageName, record.GetString("version"))))
+		}
+
+		defaultExport, err := HasDefaultExport(record)
+		if err != nil {
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
+		}
+
+		return c.String(200, IndexFile(packageName, record.GetString("version"), record.GetString("index"), defaultExport))
 	}
 }
 
@@ -98,7 +132,7 @@ func GetFile(app core.App, c echo.Context) error {
 
 	file, err := helpers.ReadFromTar(fileName, filePath)
 	if err != nil {
-		return c.String(404, FileNotFound(fmt.Sprintf("/vfs/%s/%s/%s/%s", encodedName, packageName, packageVersion, fileName)))
+		return c.String(200, FileNotFound(fmt.Sprintf("/vfs/%s/%s/%s/%s", encodedName, packageName, packageVersion, fileName)))
 	}
 
 	contents := &api.StdinOptions{
