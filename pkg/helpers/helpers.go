@@ -14,7 +14,6 @@ func SplitLast(string []string) string {
     return string[len(string)-1]
 }
 
-
 func InspectRuntime() (baseDir string, withGoRun bool) {
 	if strings.HasPrefix(os.Args[0], os.TempDir()) {
 		withGoRun = true

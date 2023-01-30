@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+   "strings"
 
 	"registry/pkg/helpers"
 	"registry/pkg/parse"
@@ -42,10 +43,10 @@ func PackageIndex(app core.App, c echo.Context) error {
 		dependencies := make(map[string]string)
 		filename := record.GetString("tarball")
 		filePath := record.BaseFilesPath() + "/" + filename
-      
-      if err := json.Unmarshal([]byte(record.GetString("dependencies")), &dependencies); err != nil {
-         return c.JSON(500, response.ErrorFromString(500, err.Error()))
-      }
+
+		if err := json.Unmarshal([]byte(record.GetString("dependencies")), &dependencies); err != nil {
+			return c.JSON(500, response.ErrorFromString(500, err.Error()))
+		}
 
 		fs, err := app.NewFilesystem()
 		if err != nil {
@@ -114,26 +115,28 @@ func PackageIndex(app core.App, c echo.Context) error {
 	})
 }
 
-func PackageVersion(app core.App, c echo.Context, split []string) error {   
-	package_name, err := parse.EncodeName(split[0])
+func PackageVersion(app core.App, c echo.Context) error {
+	packageVersion := parse.GetSemVer(c.PathParam("package"))   
+	packageName := strings.ReplaceAll(c.PathParam("package"), fmt.Sprintf("@%s", packageVersion), "")
+	dependencies := make(map[string]string)
+
+	encodedName, err := parse.EncodeName(packageName)
 	if err != nil {
 		return c.JSON(500, response.ErrorFromString(500, err.Error()))
 	}
 
-	package_version := split[1]
-	dependencies := make(map[string]string)
+	records, err := app.Dao().FindRecordsByExpr(encodedName, dbx.HashExp{"visibility": "public", "version": packageVersion})
+	if len(records) == 0 {
+		return c.JSON(404, response.ErrorFromString(404, "package or version not found"))
+	}
 
-	records, err := app.Dao().FindRecordsByExpr(package_name, dbx.HashExp{"visibility": "public", "version": package_version})
-   if len(records) == 0 {
-      return c.JSON(404, response.ErrorFromString(404, "package or version not found"))
-   }
-   
-   if err := json.Unmarshal([]byte(records[0].GetString("dependencies")), &dependencies); err != nil {
-      return c.JSON(500, response.ErrorFromString(500, err.Error()))
-   }
+	record := records[0]
+	filename := record.GetString("tarball")
+	filePath := record.BaseFilesPath() + "/" + filename
 
-	filename := records[0].GetString("tarball")
-	filePath := records[0].BaseFilesPath() + "/" + filename
+	if err := json.Unmarshal([]byte(records[0].GetString("dependencies")), &dependencies); err != nil {
+		return c.JSON(500, response.ErrorFromString(500, err.Error()))
+	}
 
 	fs, err := app.NewFilesystem()
 	if err != nil {
@@ -147,19 +150,19 @@ func PackageVersion(app core.App, c echo.Context, split []string) error {
 	}
 
 	return c.JSON(http.StatusOK, &types.VersionInfo{
-		Id:           records[0].Id,
-		Access:       records[0].GetStringSlice("access"),
-		Version:      records[0].GetString("version"),
-		Published:    records[0].Created,
-		Description:  records[0].GetString("description"),
-		Author:       records[0].GetString("author"),
-		License:      helpers.PackageHasLicense(records[0]),
-		Private:      helpers.PackagePrivacyStatus(records[0]),
+		Id:           record.Id,
+		Access:       record.GetStringSlice("access"),
+		Version:      record.GetString("version"),
+		Published:    record.Created,
+		Description:  record.GetString("description"),
+		Author:       record.GetString("author"),
+		License:      helpers.PackageHasLicense(record),
+		Private:      helpers.PackagePrivacyStatus(record),
 		Dependencies: dependencies,
 		Dist: types.DistInfo{
-			Version:   records[0].GetString("version"),
+			Version:   record.GetString("version"),
 			Integrity: fmt.Sprintf("MD5_%x", attribute.MD5),
-			Tarball:   fmt.Sprintf("%s/%s/_/%s/%s.tgz", helpers.TarPath(), split[0], records[0].GetString("version"), split[0]),
+			Tarball:   fmt.Sprintf("%s/%s/_/%s/%s.tgz", helpers.TarPath(), packageName, packageVersion, packageName),
 			Size:      attribute.Size,
 		},
 	})

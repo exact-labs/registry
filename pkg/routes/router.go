@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"strings"
 
 	"registry/pkg/create"
 	"registry/pkg/parse"
@@ -46,15 +45,12 @@ func Router(app core.App) error {
 				pkg := c.PathParam("package")
 				regex := regexp.MustCompile(`Wget/|curl|^$`)
 				user_agent := useragent.Parse(c.Request().UserAgent()).String
-            
-            split_path := strings.Split(c.PathParam("package"), "@")
-
-
+         
 				if regex.MatchString(user_agent) {
 					return handler.GetIndex(app, c)
 				} else {
-               if parse.HasVersion(pkg) {
-                  return handler.PackageVersion(app, c, split_path)
+               if parse.HasSemVersion(pkg) {
+                  return handler.PackageVersion(app, c)
                } else {
                   return handler.PackageIndex(app, c)
                }
@@ -140,7 +136,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodPost,
-			Path:   "/api/v1/pkg/create",
+			Path:   "/api/:ver/create",
 			Handler: func(c echo.Context) error {
 				if err := create.Package(app, c); err != nil {
 					return c.JSON(http.StatusInternalServerError, &types.Response{Status: http.StatusInternalServerError, Message: map[string]interface{}{
@@ -164,7 +160,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/~/maintainers/:name",
+			Path:   "/api/maintainers/:name",
 			Handler: func(c echo.Context) error {
 				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
 				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
@@ -186,7 +182,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/~/dependencies/:name",
+			Path:   "/api/:ver/dependencies/:name",
 			Handler: func(c echo.Context) error {
 				encoded_name, _ := parse.EncodeName(c.PathParam("name"))
 				records, err := app.Dao().FindRecordsByExpr(encoded_name, dbx.HashExp{"visibility": "public"})
@@ -220,7 +216,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/~/packages",
+			Path:   "/api/packages",
 			Handler: func(c echo.Context) error {
 				fieldResolver := search.NewSimpleFieldResolver(
 					"id", "created", "updated", "name", "system", "type",

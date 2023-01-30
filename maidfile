@@ -3,5 +3,5 @@ clean = { info = "remove binary", path = "", script = "rm registry" }
 build = { info = "create binary", path = "", script = "go build ." }
 
 # local debugging 
-build-debug = { info = "build debug binary", path = "", script = ["go build .", "mv registry debug/bin"] } 
+debugb = { info = "build debug binary", path = "", script = ["go build .", "mv registry debug/bin"] } 
 debug = { info = "test binary", path = "debug", script = "./bin serve --debug" }

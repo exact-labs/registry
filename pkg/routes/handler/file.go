@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"registry/pkg/helpers"
@@ -22,6 +21,13 @@ export default null;
 `, info)
 }
 
+func PackageOnlyError(info string) string {
+   return fmt.Sprintf(`/* r.justjs.dev - error */
+throw new Error("[r.justjs.dev] " + "ImportError: %s can only be used as local package");
+export default null;
+`, info)
+}
+
 func IndexFile(name string, version string, index string) string {
    return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
 export * from "/v052/%[1]s/%[2]s/es2022/%s";
@@ -29,11 +35,8 @@ export * from "/v052/%[1]s/%[2]s/es2022/%s";
 }
 
 func GetIndex(app core.App, c echo.Context) error {
-	getSemVer := regexp.MustCompile(`\d+(\.\d+)+`).FindAllString
-	semVerCheck := regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`).MatchString
-
-	if semVerCheck(helpers.SplitLast(strings.Split(c.PathParam("package"), "@"))) {
-		packageVersion := getSemVer(c.PathParam("package"), -1)[0]
+	if parse.HasSemVersion(c.PathParam("package")) {
+		packageVersion := parse.GetSemVer(c.PathParam("package"))
 		packageName := strings.ReplaceAll(c.PathParam("package"), fmt.Sprintf("@%s", packageVersion), "")
 		encodedName, err := parse.EncodeName(packageName)
 		if err != nil {
@@ -46,6 +49,10 @@ func GetIndex(app core.App, c echo.Context) error {
       }
       
       record := records[0]
+      if record.GetString("group") == "local" {
+         return c.String(404, PackageOnlyError(fmt.Sprintf(`%s@%s/%s`, packageName, packageVersion)))
+      }
+      
 		return c.String(200, IndexFile(packageName, packageVersion, record.GetString("index")))
 	} else {
       packageName := c.PathParam("package")
@@ -60,6 +67,10 @@ func GetIndex(app core.App, c echo.Context) error {
 		}
 
 		record := records[len(records)-1]
+      if record.GetString("group") == "local" {
+         return c.String(404, PackageOnlyError(fmt.Sprintf(`%s@%s/%s`, packageName, record.GetString("version"))))
+      }
+      
       return c.String(200, IndexFile(packageName, record.GetString("version"), record.GetString("index")))
 	}
 }
