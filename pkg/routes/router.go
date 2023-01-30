@@ -25,8 +25,8 @@ import (
 
 func Router(app core.App) error {
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.GET("/~/templates/*", apis.StaticDirectoryHandler(os.DirFS(templates.Dir()), false))
-
+		e.Router.GET("/api/:ver/templates/*", apis.StaticDirectoryHandler(os.DirFS(templates.Dir()), false))
+      
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
 			Path:   "/",
@@ -42,14 +42,13 @@ func Router(app core.App) error {
 			Method: http.MethodGet,
 			Path:   "/:package",
 			Handler: func(c echo.Context) error {
-				pkg := c.PathParam("package")
-				regex := regexp.MustCompile(`Wget/|curl|^$`)
-				user_agent := useragent.Parse(c.Request().UserAgent()).String
+				checkAgent := regexp.MustCompile(`Wget/|curl|^$`).MatchString
+				userAgent := useragent.Parse(c.Request().UserAgent()).String
          
-				if regex.MatchString(user_agent) {
+				if checkAgent(userAgent) {
 					return handler.GetIndex(app, c)
 				} else {
-               if parse.HasSemVersion(pkg) {
+               if parse.HasSemVersion(c.PathParam("package")) {
                   return handler.PackageVersion(app, c)
                } else {
                   return handler.PackageIndex(app, c)
@@ -60,6 +59,17 @@ func Router(app core.App) error {
 				apis.ActivityLogger(app),
 			},
 		})
+      
+      e.Router.AddRoute(echo.Route{
+         Method: http.MethodGet,
+         Path:   "/:package/mod",
+         Handler: func(c echo.Context) error {
+           return handler.GetIndex(app, c)
+         },
+         Middlewares: []echo.MiddlewareFunc{
+            apis.ActivityLogger(app),
+         },
+      })
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
@@ -124,7 +134,7 @@ func Router(app core.App) error {
 
 		e.Router.AddRoute(echo.Route{
 			Method: http.MethodGet,
-			Path:   "/v052/:package/:version/:esm/*",
+			Path:   fmt.Sprintf("/%s/:package/:version/:esm/*", os.Getenv("JUST_VERSION")),
 			Handler: func(c echo.Context) error {
 				// user_agent := useragent.Parse(c.Request().UserAgent()).String
 				return handler.GetFile(app, c)

@@ -1,6 +1,7 @@
 package handler
 
 import (
+   "os"
 	"fmt"
 	"regexp"
 	"strings"
@@ -16,30 +17,23 @@ import (
 	"github.com/pocketbase/pocketbase/models"
 )
 
-func FileNotFound(info string) string {
+func PackageError(info string) string {
 	return fmt.Sprintf(`/* r.justjs.dev - error */
-throw new Error("[r.justjs.dev] " + "resovleESModule: open %s: no such file or directory");
-export default null;
-`, info)
-}
-
-func PackageOnlyError(info string) string {
-	return fmt.Sprintf(`/* r.justjs.dev - error */
-throw new Error("[r.justjs.dev] " + "ImportError: %s can only be used as local package");
+throw new Error("[r.justjs.dev] " + "%s");
 export default null;
 `, info)
 }
 
 func IndexFile(name string, version string, index string, defaultExport bool) string {
 	if defaultExport {
-		return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
-export * from "/v052/%[1]s/%[2]s/es2022/%s";
-export { default } from "/v052/%[1]s/%[2]s/es2022/%s";
-`, name, version, index)
+		return fmt.Sprintf(`/* r.justjs.dev - %[2]s@%[3]s */
+export * from "/%[1]s/%[2]s/%[3]s/es2022/%s";
+export { default } from "/%[1]s/%[2]s/%[3]s/es2022/%s";
+`, os.Getenv("JUST_VERSION"), name, version, index)
 	} else {
-		return fmt.Sprintf(`/* r.justjs.dev - %s@%s */
-export * from "/v052/%[1]s/%[2]s/es2022/%s";
-`, name, version, index)
+		return fmt.Sprintf(`/* r.justjs.dev - %[2]s@%[3]s */
+export * from "/%[1]s/%[2]s/%[3]s/es2022/%s";
+`, os.Getenv("JUST_VERSION"), name, version, index)
 	}
 }
 
@@ -50,11 +44,11 @@ func HasDefaultExport(record *models.Record) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-   
+
 	if hasExport(string(file)) {
 		return true, nil
 	}
-   
+
 	return false, nil
 }
 
@@ -74,7 +68,7 @@ func GetIndex(app core.App, c echo.Context) error {
 
 		record := records[0]
 		if record.GetString("group") == "local" {
-			return c.String(200, PackageOnlyError(fmt.Sprintf(`%s@%s`, packageName, packageVersion)))
+			return c.String(200, PackageError(fmt.Sprintf(`ImportError: %s@%s can only be used as local package`, packageName, packageVersion)))
 		}
 
 		defaultExport, err := HasDefaultExport(record)
@@ -97,7 +91,7 @@ func GetIndex(app core.App, c echo.Context) error {
 
 		record := records[len(records)-1]
 		if record.GetString("group") == "local" {
-			return c.String(200, PackageOnlyError(fmt.Sprintf(`%s@%s`, packageName, record.GetString("version"))))
+			return c.String(200, PackageError(fmt.Sprintf(`ImportError: %s@%s can only be used as local package`, packageName, record.GetString("version"))))
 		}
 
 		defaultExport, err := HasDefaultExport(record)
@@ -115,7 +109,31 @@ func GetFile(app core.App, c echo.Context) error {
 	esVersion := c.PathParam("esm")
 	fileName := c.PathParam("*")
 
-	add_mod := strings.NewReplacer(`from"./`, fmt.Sprintf(`from"/v052/%s/%s/%s/`, packageName, packageVersion, esVersion))
+	var esTarget = api.DefaultTarget
+	switch esVersion {
+	case "es2022":
+		esTarget = api.ES2022
+	case "es2021":
+		esTarget = api.ES2021
+	case "es2020":
+		esTarget = api.ES2020
+	case "es2019":
+		esTarget = api.ES2019
+	case "es2018":
+		esTarget = api.ES2018
+	case "es2017":
+		esTarget = api.ES2017
+	case "es2016":
+		esTarget = api.ES2016
+	case "es2015":
+		esTarget = api.ES2015
+	case "es6":
+		esTarget = api.ES2015
+	default:
+		return c.String(200, PackageError(fmt.Sprintf("BuildError: target %s cannot be used for %s", esVersion, c.PathParam("package"))))
+	}
+
+	add_mod := strings.NewReplacer(`from"./`, fmt.Sprintf(`from"/%s/%s/%s/%s/`, os.Getenv("JUST_VERSION"), packageName, packageVersion, esVersion))
 	encodedName, err := parse.EncodeName(packageName)
 	if err != nil {
 		return c.JSON(500, response.ErrorFromString(500, err.Error()))
@@ -128,11 +146,11 @@ func GetFile(app core.App, c echo.Context) error {
 
 	record := records[len(records)-1]
 	filePath := fmt.Sprintf("packages/storage/%s/%s", record.BaseFilesPath(), record.GetString("tarball"))
-	banner := map[string]string{"js": fmt.Sprintf("/* r.justjs.dev - esbuild bundle(%s@%s) es2022 production */", packageName, packageVersion)}
+	banner := map[string]string{"js": fmt.Sprintf("/* r.justjs.dev - esbuild bundle(%s@%s) %s production */", packageName, packageVersion, esVersion)}
 
 	file, err := helpers.ReadFromTar(fileName, filePath)
 	if err != nil {
-		return c.String(200, FileNotFound(fmt.Sprintf("/vfs/%s/%s/%s/%s", encodedName, packageName, packageVersion, fileName)))
+		return c.String(200, PackageError(fmt.Sprintf("resovleESModule: open /vfs/%s/%s/%s/%s: no such file or directory", encodedName, packageName, packageVersion, fileName)))
 	}
 
 	contents := &api.StdinOptions{
@@ -162,7 +180,7 @@ func GetFile(app core.App, c echo.Context) error {
 		Write:             false,
 		Bundle:            false,
 		Banner:            banner,
-		Target:            api.ES2022,
+		Target:            esTarget,
 		Format:            api.FormatESModule,
 		LogLevel:          api.LogLevelSilent,
 		Platform:          api.PlatformBrowser,

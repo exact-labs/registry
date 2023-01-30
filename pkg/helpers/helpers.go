@@ -10,6 +10,13 @@ import (
 	tarfs "github.com/nlepage/go-tarfs"
 )
 
+func Ternary[T any](cond bool, vtrue, vfalse T) T {
+    if cond {
+        return vtrue
+    }
+    return vfalse
+}
+
 func SplitLast(string []string) string {
     return string[len(string)-1]
 }
