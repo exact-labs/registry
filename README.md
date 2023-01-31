@@ -7,3 +7,6 @@ todo:
 - [ ] add private package loading via user token on runtime/api
 - [x] standardize error responses
 - [ ] standardize responses
+- [ ] migrate to pocketbase v0.12.1
+  - [ ] use filesystem.GetFile()
+  - [ ] use filesystem.NewFileFromBytes()?
